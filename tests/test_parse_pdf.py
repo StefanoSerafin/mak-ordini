@@ -249,6 +249,19 @@ ORDINE 1
         self.assertEqual(o["termini_pagamento"], "RICEVUTA 30 GG F.M.")
         self.assertEqual((o["imponibile"], o["righe"][0]["importo"]), (400.56, 400.56))
 
+    def test_totale_a_cavallo_di_pagina(self):
+        o = parse_testo(ordine("""F7070MMBM55P5IX 7J17 MAGMA/P5IX ET55 5X100 56,1 BLM IT 4,00 142,99 20.00 457,57
+SUBARU, XV, 2018 > G5
+Importo Totale 558.24
+457.57
+Importo Imponibile
+ORDINE 1
+Imposta (Iva) 100.67
+ORDINE 2
+"""))
+        self.assertEqual((o["imponibile"], o["iva"], o["totale"]), (457.57, 100.67, 558.24))
+        self.assertEqual(o["righe"][0]["applicazione"], "SUBARU, XV, 2018 > G5")
+
     def test_separatore_migliaia(self):
         self.assertEqual(parse_testo(MIGLIAIA)["righe"][0]["importo"], 1486.40)
 

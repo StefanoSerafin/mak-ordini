@@ -117,6 +117,7 @@ def parse_testo(testo):
     kit_veicolo_atteso = False
     veicolo_kit = None
     note = []
+    orfano = None       # numero rimasto da solo su una riga nella zona totali
     pendente = None     # ultima riga di solo testo: (riga a cui e' stata attaccata, testo, applicazione di prima)
     for i, r in enumerate(righe_txt):
         if r.startswith("Cod.Articolo"):
@@ -176,10 +177,15 @@ def parse_testo(testo):
         tot = next((k for k in TOTALI if r.startswith(k)), None)
         if tot:
             v = r[len(tot):].strip()
+            if not v and orfano is not None:
+                v, orfano = orfano, None    # a cavallo di un cambio pagina il valore finisce sulla riga prima dell'etichetta
             try:
                 o[TOTALI[tot]] = float(v)
             except ValueError:
                 pass
+            continue
+        if o["totale"] is not None and re.match(r"^-?\d+(\.\d+)?$", r):
+            orfano = r
             continue
         if r.startswith("ORDINE ") or r.startswith("Data - Ora:") or r == "Pagina" or RE_PAGINA.match(r) \
                 or r.startswith("Utente:") or r == "Riferimento Interno" or r == o["id"]:

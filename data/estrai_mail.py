@@ -12,7 +12,7 @@ messaggi gia' trattati (data/log/messaggi.json) e smette di scorrere quando un
 intero blocco e' gia' noto. Riprendibile: dopo un'interruzione basta rilanciare
 con --completo, i blocchi gia' fatti scorrono in pochi secondi.
 
-    python3 data/estrai_mail.py                # dal 2026-01-01
+    python3 data/estrai_mail.py                # dal 2025-01-01
     python3 data/estrai_mail.py --limite 20    # prova
     python3 data/estrai_mail.py --completo     # riscorre tutto il periodo
 """
@@ -35,7 +35,7 @@ PROFILI = os.path.join(LOG_DIR, "profili.json")
 
 ACCOUNT = "MAK"
 CASELLA = "Ordini"
-DAL_MINIMO = datetime.date(2026, 1, 1)   # non si scende mai sotto questa data
+DAL_MINIMO = datetime.date(2025, 1, 1)   # non si scende mai sotto questa data (2025 aggiunto su richiesta, 2026-10-01)
 BLOCCO = 50
 SEP = "\x1f"
 
@@ -209,7 +209,7 @@ def _stato():
         return {}
 
 
-def estrai(dal=DAL_MINIMO, limite=None, completo=False, verbose=True):
+def estrai(dal=DAL_MINIMO, limite=None, completo=False, verbose=True, da_indice=1):
     if dal < DAL_MINIMO:
         raise SystemExit(f"Il cutoff non puo' essere precedente al {DAL_MINIMO.isoformat()}.")
     os.makedirs(PDF_DIR, exist_ok=True)
@@ -226,7 +226,7 @@ def estrai(dal=DAL_MINIMO, limite=None, completo=False, verbose=True):
     assegnati = {v for v in stato.values() if not v.startswith("scarto:")}
     letti = salvati = 0
     errori = []
-    inizio = 1
+    inizio = max(1, da_indice)
     tmp = None
     try:
         while True:
@@ -305,15 +305,16 @@ def estrai(dal=DAL_MINIMO, limite=None, completo=False, verbose=True):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dal", default=DAL_MINIMO.isoformat(), help="data minima (YYYY-MM-DD), non prima del 2026-01-01")
+    ap.add_argument("--dal", default=DAL_MINIMO.isoformat(), help="data minima (YYYY-MM-DD), non prima del 2025-01-01")
     ap.add_argument("--limite", type=int, help="scarica al massimo N ordini (prova)")
     ap.add_argument("--completo", action="store_true", help="riscorre tutto il periodo anche se i primi blocchi sono gia' noti")
+    ap.add_argument("--da-indice", type=int, default=1, help="parte dal messaggio N della casella (1 = piu' recente): per riprendere un caricamento lungo senza riscorrere i blocchi gia' fatti")
     ap.add_argument("--profili", action="store_true", help="completa Network/Tipo/Marca degli ordini gia' scaricati, senza scaricare nulla")
     a = ap.parse_args()
     if a.profili:
         print(completa_profili(datetime.date.fromisoformat(a.dal)))
         return 0
-    print(estrai(datetime.date.fromisoformat(a.dal), a.limite, a.completo))
+    print(estrai(datetime.date.fromisoformat(a.dal), a.limite, a.completo, da_indice=a.da_indice))
     return 0
 
 

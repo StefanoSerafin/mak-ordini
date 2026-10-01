@@ -35,18 +35,23 @@ PLAIN = os.path.join(QUI, "ordini.plain.json")
 PBKDF2_ITER = 600_000
 MIN_PASS = 16
 UTENTE = {"agente": "a", "cliente": "c"}
+# La pagina mostra gli ordini da questa data. Il DB locale contiene anche il 2025
+# (per i confronti anno su anno): entrera' in pagina quando ci saranno le viste di confronto.
+PAGINA_DAL = "2026-01-01"
 
 
-def dataset():
+def dataset(dal=PAGINA_DAL):
     con = sqlite3.connect(DB)
     con.row_factory = sqlite3.Row
     cat = [r["categoria"] for r in con.execute(
-        "SELECT categoria, SUM(importo) s FROM righe GROUP BY categoria ORDER BY s DESC")]
+        "SELECT r.categoria, SUM(r.importo) s FROM righe r JOIN ordini o ON o.id=r.ordine_id"
+        " WHERE o.data_ora >= ? GROUP BY r.categoria ORDER BY s DESC", (dal,))]
     icat = {c: i for i, c in enumerate(cat)}
     clienti, icli = [], {}
     for r in con.execute("SELECT codice, ragione_sociale, citta, provincia, flag_cliente, in_anagrafica,"
                          " network, tipo"
-                         " FROM clienti ORDER BY ragione_sociale"):
+                         " FROM clienti WHERE codice IN (SELECT codice_cliente FROM ordini WHERE data_ora >= ?)"
+                         " ORDER BY ragione_sociale", (dal,)):
         icli[r["codice"]] = len(clienti)
         clienti.append([r["codice"], r["ragione_sociale"], r["citta"] or "", r["provincia"] or "",
                         r["flag_cliente"] or "", r["in_anagrafica"] or 0,
@@ -55,20 +60,21 @@ def dataset():
     # omaggi: restano visibili (articoli e pezzi) ma valgono 0, per non gonfiare i totali
     omaggi = {r["id"] for r in con.execute("SELECT id FROM ordini WHERE omaggio=1")}
     for r in con.execute("SELECT ordine_id, cod_articolo, descrizione, applicazione, qta, prezzo, sconto,"
-                         " importo, categoria, coupon FROM righe ORDER BY ordine_id, n_riga"):
+                         " importo, categoria, coupon FROM righe WHERE ordine_id IN"
+                         " (SELECT id FROM ordini WHERE data_ora >= ?) ORDER BY ordine_id, n_riga", (dal,)):
         om = r["ordine_id"] in omaggi
         righe.setdefault(r["ordine_id"], []).append([
             r["cod_articolo"], r["descrizione"], r["applicazione"] or "", r["qta"], 0 if om else r["prezzo"],
             r["sconto"] or "", 0 if om else r["importo"], icat[r["categoria"]], r["coupon"] or ""])
     ordini = []
     for r in con.execute("SELECT id, codice_cliente, data_ora, inserito_da, kit_completo, merce_righe,"
-                         " spedizione, imponibile FROM ordini ORDER BY data_ora DESC"):
+                         " spedizione, imponibile FROM ordini WHERE data_ora >= ? ORDER BY data_ora DESC", (dal,)):
         om = r["id"] in omaggi
         ordini.append([r["id"], icli[r["codice_cliente"]], (r["data_ora"] or "")[:16],
                        UTENTE.get(r["inserito_da"], "x"), r["kit_completo"] or 0, 0 if om else r["merce_righe"],
                        r["spedizione"] or 0, 0 if om else (r["imponibile"] or 0), righe.get(r["id"], []),
                        1 if om else 0])
-    per = con.execute("SELECT MIN(data_ora) a, MAX(data_ora) b FROM ordini").fetchone()
+    per = con.execute("SELECT MIN(data_ora) a, MAX(data_ora) b FROM ordini WHERE data_ora >= ?", (dal,)).fetchone()
     meta = {
         "build": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "dal": (per["a"] or "")[:10], "al": (per["b"] or "")[:10],

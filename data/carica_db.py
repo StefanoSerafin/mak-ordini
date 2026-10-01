@@ -228,6 +228,9 @@ def report(con, verbose=True):
     if verbose:
         print(f"Ordini {r['ordini']} | clienti {r['clienti']} | righe {r['righe']} | merce {r['merce']:.2f}")
         print(f"Periodo {r['periodo'][0]} -> {r['periodo'][1]}")
+        for x in q("SELECT substr(data_ora,1,4) anno, COUNT(*) n, COUNT(DISTINCT codice_cliente) c,"
+                   " SUM(CASE WHEN omaggio=0 THEN merce_righe ELSE 0 END) s FROM ordini GROUP BY 1 ORDER BY 1"):
+            print(f"  {x['anno']}: {x['n']} ordini, {x['c']} clienti, merce {x['s']:.2f} (omaggi esclusi)")
         print(f"Non quadrano: {len(r['non_quadrano'])} | senza imponibile: {r['senza_imponibile']} | "
               f"multipagina: {len(r['multipagina'])} | PDF scartati: {r['scarti_pdf']} | "
               f"clienti fuori anagrafica: {r['fuori_anagrafica']} | "
