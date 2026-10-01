@@ -1,0 +1,24 @@
+{
+  "_nota": "Regole in ordine di priorita': vince la prima che corrisponde. 'prefisso' = inizio del codice articolo; 'regex_codice' = espressione regolare sul codice; 'contiene' = almeno una delle parole nella descrizione (maiuscole); 'regex_descrizione' = espressione regolare sulla descrizione. Dopo una modifica: python3 data/carica_db.py --riclassifica",
+  "regole": [
+    {"categoria": "Servizi", "prefisso": ["792"]},
+    {"categoria": "Pneumatici", "prefisso": ["79"]},
+    {"categoria": "AdBlue", "prefisso": ["94"]},
+    {"categoria": "Materiale espositivo", "prefisso": ["99"]},
+    {"categoria": "Calze da neve NPK", "contiene": ["SOCKS"]},
+    {"categoria": "Calze da neve NPK", "prefisso": ["73"]},
+    {"categoria": "Ruotino / kit NPK", "prefisso": ["78"]},
+    {"categoria": "Tool e diagnosi", "contiene": ["TOOL", "TESTER", "SBLOCCO"]},
+    {"categoria": "Tool e diagnosi", "prefisso": ["72"]},
+    {"categoria": "Bulloneria e accessori", "regex_descrizione": "VALVE TR\\d"},
+    {"categoria": "TPMS / MATE", "contiene": ["TPMS", "VALVE", "SENS"]},
+    {"categoria": "Copricerchi", "prefisso": ["74"]},
+    {"categoria": "Distanziali Xilema", "contiene": ["DISTANZIALE"]},
+    {"categoria": "Distanziali Xilema", "prefisso": ["76"]},
+    {"categoria": "Ruote truck", "prefisso": ["F"], "regex_descrizione": "^\\d+(,\\d+)?J(17,5|19,5|22,5)\\b"},
+    {"categoria": "Ruote acciaio", "regex_codice": "^F.{4}CC"},
+    {"categoria": "Ruote lega", "prefisso": ["F"]},
+    {"categoria": "Bulloneria e accessori", "prefisso": ["80", "93"]}
+  ],
+  "default": "Altro"
+}

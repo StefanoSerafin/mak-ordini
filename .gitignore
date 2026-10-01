@@ -1,0 +1,8 @@
+.DS_Store
+.env
+__pycache__/
+data/pdf/
+data/log/
+data/*.db
+data/*.db-journal
+data/*.plain.json
