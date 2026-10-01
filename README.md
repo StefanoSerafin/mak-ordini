@@ -77,7 +77,7 @@ python3 aggiorna.py                 # chiede la passphrase e rigenera index.html
 git add index.html && git commit -m "Pagina ordini: build AAAA-MM-GG" && git push
 ```
 
-Il push va lanciato a mano dal terminale. GitHub Pages si aggiorna in un paio di minuti.
+GitHub Pages si aggiorna in un paio di minuti.
 
 ## Categorie
 
