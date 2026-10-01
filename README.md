@@ -5,6 +5,8 @@ allegato testata e righe di ogni ordine, le salva in un database SQLite locale
 e genera una web app single-file **cifrata** per consultare gli ordini per
 cliente (da Mac, iPhone, iPad).
 
+**Online:** https://stefanoserafin.github.io/mak-ordini/ (serve la passphrase)
+
 ## Fonte e limiti
 
 - **Fonte unica:** casella `Ordini` dell'account `MAK` in Mail, **dal
@@ -67,6 +69,15 @@ chiudi e riapri Mail, poi rilancia.
 
 Non versionati (`.gitignore`): `data/pdf/`, `data/ordini.db`, `data/log/`,
 `data/ordini.plain.json`.
+
+## Pubblicare un aggiornamento
+
+```bash
+python3 aggiorna.py                 # chiede la passphrase e rigenera index.html
+git add index.html && git commit -m "Pagina ordini: build AAAA-MM-GG" && git push
+```
+
+Il push va lanciato a mano dal terminale. GitHub Pages si aggiorna in un paio di minuti.
 
 ## Categorie
 
