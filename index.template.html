@@ -173,9 +173,15 @@ var MESI = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","d
 
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
-function eur(n){ return (n || 0).toLocaleString("it-IT", {minimumFractionDigits:2, maximumFractionDigits:2}) + " €"; }
-function eur0(n){ return Math.round(n || 0).toLocaleString("it-IT") + " €"; }
-function qta(n){ return (n || 0).toLocaleString("it-IT", {maximumFractionDigits:2}); }
+/* Formato numeri fatto a mano: toLocaleString("it-IT") non mette il punto delle migliaia sotto 10.000 */
+function num(n, dec){
+  var v = Number(n) || 0, p = Math.abs(v).toFixed(dec).split(".");
+  p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return (v < 0 && Number(p.join(".").replace(/\./g, "")) !== 0 ? "-" : "") + p[0] + (dec ? "," + p[1] : "");
+}
+function eur(n){ return num(n, 2) + " €"; }
+function eur0(n){ return eur(n); }                       /* tutti gli importi con 2 decimali */
+function qta(n){ return num(n, (Number(n) || 0) % 1 === 0 ? 0 : 2); }
 function dataIt(s){ return s ? s.slice(8,10) + "/" + s.slice(5,7) + "/" + s.slice(2,4) : ""; }
 function giorniDa(s){ if(!s) return null; var d = new Date(s.slice(0,10) + "T12:00:00"); return Math.max(0, Math.floor((OGGI - d) / 86400000)); }
 function b64(s){ var bin = atob(s), a = new Uint8Array(bin.length); for(var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
@@ -254,7 +260,7 @@ function grafico(serie, alto){
   serie.forEach(function(d, i){
     var h = (H - pb - pt) * d.merce / max, x = pl + i * passo + (passo - lb) / 2, y = H - pb - h;
     s += '<rect class="b" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + lb.toFixed(1) + '" height="' + Math.max(h, 0.5).toFixed(1) + '" rx="3"></rect>';
-    if(d.merce > 0) s += '<text class="v" text-anchor="middle" x="' + (x + lb / 2).toFixed(1) + '" y="' + (y - 4).toFixed(1) + '">' + (d.merce >= 1000 ? (d.merce / 1000).toFixed(1).replace(".", ",") + "k" : Math.round(d.merce)) + '</text>';
+    if(d.merce > 0) s += '<text class="v" text-anchor="middle" x="' + (x + lb / 2).toFixed(1) + '" y="' + (y - 4).toFixed(1) + '">' + (d.merce >= 1000 ? num(d.merce / 1000, 1) + "k" : num(d.merce, 0)) + '</text>';
     s += '<text text-anchor="middle" x="' + (x + lb / 2).toFixed(1) + '" y="' + (H - pb + 14) + '">' + d.et + '</text>';
     s += '<text text-anchor="middle" x="' + (x + lb / 2).toFixed(1) + '" y="' + (H - pb + 27) + '">' + d.n + ' ord.</text>';
   });
@@ -330,7 +336,7 @@ function riepilogo(){
            nome:function(a, b){ return a.nome.localeCompare(b.nome); }}[ord];
   l.sort(f);
   var tot = l.reduce(function(s, c){ return s + c.merce; }, 0), no = l.reduce(function(s, c){ return s + c.n; }, 0);
-  $("r-tot").textContent = l.length + " clienti · " + no + " ordini · " + eur0(tot) + " di merce";
+  $("r-tot").textContent = num(l.length, 0) + " clienti · " + num(no, 0) + " ordini · " + eur0(tot) + " di merce";
   $("r-tab").innerHTML = TH_CLI + l.map(function(c){ return rigaCli(c); }).join("");
 }
 
@@ -411,7 +417,7 @@ function avvia(){
   if(pref >= 0) $("p-sel").value = String(pref);
   $("p-art-cat").innerHTML = '<option value="">Tutte le categorie</option>' + optCat;
   riepilogo(); fermi(); prodotti(); chiCompra(); articoli(); andamento();
-  $("foot").innerHTML = D.meta.ordini + " ordini di " + D.meta.clienti + " clienti · aggiornato il " + esc(D.meta.build) +
+  $("foot").innerHTML = num(D.meta.ordini, 0) + " ordini di " + num(D.meta.clienti, 0) + " clienti · aggiornato il " + esc(D.meta.build) +
     "<br>Solo ordini passati dal portale B2B. Importi = merce ordinata, IVA, spedizione e PFU esclusi. Non sono fatture: resi e note di credito non compaiono." +
     '<br><button class="link" id="b-esci" type="button">Dimentica la passphrase su questo dispositivo</button>';
 }
