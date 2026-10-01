@@ -35,9 +35,9 @@ PLAIN = os.path.join(QUI, "ordini.plain.json")
 PBKDF2_ITER = 600_000
 MIN_PASS = 16
 UTENTE = {"agente": "a", "cliente": "c"}
-# La pagina mostra gli ordini da questa data. Il DB locale contiene anche il 2025
-# (per i confronti anno su anno): entrera' in pagina quando ci saranno le viste di confronto.
-PAGINA_DAL = "2026-01-01"
+# La pagina contiene gli ordini da questa data: anno corrente + anno precedente,
+# per le viste di confronto (sezione Confronto e scheda cliente).
+PAGINA_DAL = "2025-01-01"
 
 
 def dataset(dal=PAGINA_DAL):

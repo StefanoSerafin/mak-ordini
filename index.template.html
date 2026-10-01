@@ -64,7 +64,11 @@ details.ord[open] summary .t{white-space:normal}
 @media (max-width:480px){.barra{grid-template-columns:110px 1fr 78px}}
 svg{display:block;width:100%;height:auto}
 svg text{fill:var(--muted);font-size:11px}
-svg .b{fill:var(--bar)} svg .v{fill:var(--ink);font-size:10px}
+svg .b{fill:var(--bar)} svg .b2{fill:var(--bar2)} svg .v{fill:var(--ink);font-size:10px}
+.pos{color:var(--ok)} .neg{color:var(--accent)}
+.leg{font-size:12px;color:var(--muted);margin:2px 0 6px} .leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 10px;vertical-align:-1px}
+.leg i.a{background:var(--bar2)} .leg i.b{background:var(--bar)}
+.anno{font-size:12px;font-weight:700;color:var(--muted);padding:12px 2px 4px;border-bottom:1px solid var(--line)}
 .due{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media (max-width:640px){.due{grid-template-columns:1fr}}
 footer{margin-top:22px;font-size:12px;color:var(--muted)}
@@ -92,6 +96,7 @@ label.chk input{width:20px;height:20px}
 
   <div class="nav" id="nav">
     <input type="radio" name="sez" id="n-cliente" value="cliente" checked><label for="n-cliente">Cliente</label>
+    <input type="radio" name="sez" id="n-confronto" value="confronto"><label for="n-confronto">Confronto</label>
     <input type="radio" name="sez" id="n-riepilogo" value="riepilogo"><label for="n-riepilogo">Riepilogo</label>
     <input type="radio" name="sez" id="n-fermi" value="fermi"><label for="n-fermi">Fermi</label>
     <input type="radio" name="sez" id="n-prodotti" value="prodotti"><label for="n-prodotti">Prodotti</label>
@@ -104,7 +109,39 @@ label.chk input{width:20px;height:20px}
     <div id="scheda"></div>
   </section>
 
+  <section class="sez" id="s-confronto">
+    <select id="c-vista">
+      <option value="sintesi">Sintesi dei due anni</option>
+      <option value="delta">Clienti in calo e in crescita</option>
+      <option value="persi">Clienti persi e nuovi</option>
+      <option value="mix">Mix prodotto: chi ha smesso, chi ha iniziato</option>
+      <option value="q4">Ultimo trimestre: chi ordinava un anno fa</option>
+    </select>
+    <div class="filtri" style="margin-top:8px">
+      <select id="c-prov"></select>
+      <select id="c-net"></select>
+      <select id="c-tipo"></select>
+      <select id="c-ord" hidden>
+        <option value="calo">Dal calo maggiore</option>
+        <option value="crescita">Dalla crescita maggiore</option>
+      </select>
+      <select id="c-pn" hidden>
+        <option value="persi">Persi: ordinavano, quest'anno zero</option>
+        <option value="nuovi">Nuovi: mai ordinato l'anno scorso</option>
+      </select>
+      <select id="c-cat" hidden></select>
+      <select id="c-mix" hidden>
+        <option value="smesso">Hanno smesso di comprarla</option>
+        <option value="iniziato">Hanno iniziato a comprarla</option>
+        <option value="mai">Mai comprata in due anni</option>
+      </select>
+    </div>
+    <p class="muted small" id="c-tot"></p>
+    <div id="c-out"></div>
+  </section>
+
   <section class="sez" id="s-riepilogo">
+    <p class="muted small nota-anno"></p>
     <div class="filtri">
       <select id="r-prov"></select>
       <select id="r-net"></select>
@@ -122,6 +159,7 @@ label.chk input{width:20px;height:20px}
   </section>
 
   <section class="sez" id="s-fermi">
+    <p class="muted small nota-anno"></p>
     <div class="filtri">
       <select id="f-soglia">
         <option value="60">Nessun ordine da 60 giorni</option>
@@ -140,6 +178,7 @@ label.chk input{width:20px;height:20px}
   </section>
 
   <section class="sez" id="s-prodotti">
+    <p class="muted small nota-anno"></p>
     <h2>Categorie</h2>
     <div class="tabwrap"><table id="p-cat"></table></div>
     <h2>Chi compra e chi no</h2>
@@ -155,7 +194,7 @@ label.chk input{width:20px;height:20px}
 
   <section class="sez" id="s-andamento">
     <h2>Merce ordinata per mese</h2>
-    <div class="card" id="a-graf"></div>
+    <div class="card"><div class="leg" id="a-leg"></div><div id="a-graf"></div></div>
     <div class="tabwrap"><table id="a-tab"></table></div>
   </section>
 
@@ -168,7 +207,7 @@ label.chk input{width:20px;height:20px}
 var PAYLOAD = "__PAYLOAD__";
 var BUILD_META = __BUILD_META__;
 var LS_KEY = "mak-ordini-pass";
-var D = null, CLI = [], OGGI = new Date();
+var D = null, CLI = [], CLIA = [], ORD = [], ANNO = "", PREC = "", TAGLIO = "", OGGI = new Date();
 var MESI = ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"];
 
 function $(id){ return document.getElementById(id); }
@@ -182,6 +221,13 @@ function num(n, dec){
 function eur(n){ return num(n, 2) + " €"; }
 function eur0(n){ return eur(n); }                       /* tutti gli importi con 2 decimali */
 function qta(n){ return num(n, (Number(n) || 0) % 1 === 0 ? 0 : 2); }
+function pct(prima, dopo){
+  if(!prima) return dopo ? "nuovo" : "—";
+  var v = 100 * (dopo / prima - 1);
+  return (v > 0 ? "+" : "") + num(v, 1) + "%";
+}
+function seg(v){ return v > 0.004 ? "pos" : (v < -0.004 ? "neg" : ""); }
+function eurS(v){ return (v > 0.004 ? "+" : "") + eur(v); }
 function dataIt(s){ return s ? s.slice(8,10) + "/" + s.slice(5,7) + "/" + s.slice(2,4) : ""; }
 function giorniDa(s){ if(!s) return null; var d = new Date(s.slice(0,10) + "T12:00:00"); return Math.max(0, Math.floor((OGGI - d) / 86400000)); }
 function b64(s){ var bin = atob(s), a = new Uint8Array(bin.length); for(var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
@@ -215,54 +261,70 @@ function sblocca(pass, daMemoria){
 
 /* ---------- preparazione dati ---------- */
 function prepara(){
+  ANNO = D.meta.al.slice(0,4); PREC = String(+ANNO - 1); TAGLIO = D.meta.al.slice(5,10);
   CLI = D.clienti.map(function(c, i){
     return {i:i, cod:c[0], nome:c[1], citta:c[2], prov:c[3], flag:c[4], anag:c[5], net:c[6] || "", tipo:c[7] || "",
-            ordini:[], merce:0, cat:{}, primo:null, ultimo:null};
+            ordini:[], n:0, merce:0, cat:{}, primoA:null, ultimoA:null, ultimo:null, mesi:{},
+            /* anno precedente: pp = a parita' di periodo (fino al giorno TAGLIO), q4 = dopo */
+            p:{n:0, merce:0, cat:{}, npp:0, pp:0, ppcat:{}, nq4:0, q4:0, q4cat:{}, ultimo:null}};
   });
+  function somma(obj, righe){ righe.forEach(function(r){ obj[r[7]] = (obj[r[7]] || 0) + r[6]; }); }
   D.ordini.forEach(function(o){                 // gia' ordinati dal piu' recente
-    var c = CLI[o[1]];
-    c.ordini.push(o); c.merce += o[5];
+    var c = CLI[o[1]], anno = o[2].slice(0,4), km = o[2].slice(0,7);
+    c.ordini.push(o);
     if(!c.ultimo || o[2] > c.ultimo) c.ultimo = o[2];
-    if(!c.primo || o[2] < c.primo) c.primo = o[2];
-    o[8].forEach(function(r){ c.cat[r[7]] = (c.cat[r[7]] || 0) + r[6]; });
+    c.mesi[km] = (c.mesi[km] || 0) + o[5];
+    if(anno === ANNO){
+      c.n++; c.merce += o[5]; somma(c.cat, o[8]);
+      if(!c.ultimoA || o[2] > c.ultimoA) c.ultimoA = o[2];
+      if(!c.primoA || o[2] < c.primoA) c.primoA = o[2];
+    } else if(anno === PREC){
+      var p = c.p; p.n++; p.merce += o[5]; somma(p.cat, o[8]);
+      if(!p.ultimo || o[2] > p.ultimo) p.ultimo = o[2];
+      if(o[2].slice(5,10) <= TAGLIO){ p.npp++; p.pp += o[5]; somma(p.ppcat, o[8]); }
+      else { p.nq4++; p.q4 += o[5]; somma(p.q4cat, o[8]); }
+    }
   });
   CLI.forEach(function(c){
-    c.n = c.ordini.length;
     c.fermo = giorniDa(c.ultimo);
-    c.freq = c.n > 1 ? Math.round((new Date(c.ultimo.slice(0,10)) - new Date(c.primo.slice(0,10))) / 86400000 / (c.n - 1)) : null;
+    c.freq = c.n > 1 ? Math.round((new Date(c.ultimoA.slice(0,10)) - new Date(c.primoA.slice(0,10))) / 86400000 / (c.n - 1)) : null;
+    c.delta = c.merce - c.p.pp;
     c.cerca = (c.nome + " " + c.cod + " " + c.citta).toLowerCase();
   });
+  ORD = D.ordini.filter(function(o){ return o[2].slice(0,4) === ANNO; });
+  CLIA = CLI.filter(function(c){ return c.n > 0; });
 }
-function mesiPeriodo(){
-  var out = [], a = D.meta.dal.slice(0,7), b = D.meta.al.slice(0,7), y = +a.slice(0,4), m = +a.slice(5,7);
-  while(true){
-    var k = y + "-" + (m < 10 ? "0" : "") + m; out.push(k);
-    if(k >= b || out.length > 60) break;
-    m++; if(m > 12){ m = 1; y++; }
-  }
-  return out;
+function catPrincipale(cat){
+  var k = Object.keys(cat).sort(function(a, b){ return cat[b] - cat[a]; })[0];
+  return k == null ? "" : D.cat[+k];
 }
-function perMese(ordini){
+/* 12 mesi, due serie: anno precedente e anno corrente */
+function serieMesi(valore){
+  return MESI.map(function(et, i){
+    var mm = (i < 9 ? "0" : "") + (i + 1);
+    return {et:et, a:valore(PREC + "-" + mm) || 0, b:valore(ANNO + "-" + mm) || 0};
+  });
+}
+function perMeseZona(){
   var agg = {};
-  ordini.forEach(function(o){
-    var k = o[2].slice(0,7), a = agg[k] || (agg[k] = {n:0, merce:0, cli:{}});
-    a.n++; a.merce += o[5]; a.cli[o[1]] = 1;
+  D.ordini.forEach(function(o){
+    var k = o[2].slice(0,7), a = agg[k] || (agg[k] = {n:0, merce:0});
+    a.n++; a.merce += o[5];
   });
-  return mesiPeriodo().map(function(k){
-    var a = agg[k] || {n:0, merce:0, cli:{}};
-    return {k:k, et:MESI[+k.slice(5,7) - 1], n:a.n, merce:a.merce, cli:Object.keys(a.cli).length};
-  });
+  return agg;
 }
-function grafico(serie, alto){
-  var W = 640, H = alto || 220, pl = 6, pb = 34, pt = 18, n = serie.length;
-  var max = Math.max.apply(null, serie.map(function(s){ return s.merce; }).concat([1]));
-  var passo = (W - pl * 2) / n, lb = Math.min(46, passo * 0.7), s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Merce per mese">';
+function legenda(){ return '<i class="a"></i>' + PREC + '<i class="b"></i>' + ANNO; }
+function grafico2(serie, alto){
+  var W = 640, H = alto || 220, pl = 4, pb = 20, pt = 8, n = serie.length;
+  var max = Math.max.apply(null, serie.map(function(d){ return Math.max(d.a, d.b); }).concat([1]));
+  var passo = (W - pl * 2) / n, lb = passo * 0.36, s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Merce per mese, ' + PREC + ' e ' + ANNO + '">';
   serie.forEach(function(d, i){
-    var h = (H - pb - pt) * d.merce / max, x = pl + i * passo + (passo - lb) / 2, y = H - pb - h;
-    s += '<rect class="b" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + lb.toFixed(1) + '" height="' + Math.max(h, 0.5).toFixed(1) + '" rx="3"></rect>';
-    if(d.merce > 0) s += '<text class="v" text-anchor="middle" x="' + (x + lb / 2).toFixed(1) + '" y="' + (y - 4).toFixed(1) + '">' + (d.merce >= 1000 ? num(d.merce / 1000, 1) + "k" : num(d.merce, 0)) + '</text>';
-    s += '<text text-anchor="middle" x="' + (x + lb / 2).toFixed(1) + '" y="' + (H - pb + 14) + '">' + d.et + '</text>';
-    s += '<text text-anchor="middle" x="' + (x + lb / 2).toFixed(1) + '" y="' + (H - pb + 27) + '">' + d.n + ' ord.</text>';
+    var x0 = pl + i * passo + (passo - lb * 2 - 2) / 2;
+    [["b2", d.a, x0], ["b", d.b, x0 + lb + 2]].forEach(function(t){
+      var h = (H - pb - pt) * t[1] / max;
+      s += '<rect class="' + t[0] + '" x="' + t[2].toFixed(1) + '" y="' + (H - pb - h).toFixed(1) + '" width="' + lb.toFixed(1) + '" height="' + Math.max(h, 0.5).toFixed(1) + '" rx="2"></rect>';
+    });
+    s += '<text text-anchor="middle" x="' + (pl + i * passo + passo / 2).toFixed(1) + '" y="' + (H - 6) + '">' + d.et + '</text>';
   });
   return s + '</svg>';
 }
@@ -273,37 +335,51 @@ function cerca(){
   if(q.length < 2){ ul.innerHTML = ""; return; }
   var parole = q.split(/\s+/);
   var tr = CLI.filter(function(c){ return parole.every(function(p){ return c.cerca.indexOf(p) >= 0; }); })
-              .sort(function(a, b){ return b.merce - a.merce; }).slice(0, 30);
+              .sort(function(a, b){ return (b.merce + b.p.merce) - (a.merce + a.p.merce); }).slice(0, 30);
   ul.innerHTML = tr.length ? tr.map(function(c){
     return '<li data-cli="' + c.i + '"><b>' + esc(c.nome) + '</b> <span class="muted small">' + esc(c.cod) + ' · ' + esc(c.citta) + ' ' + esc(c.prov) +
-           ' · ' + c.n + ' ord. · ' + eur0(c.merce) + '</span></li>';
+           ' · ' + ANNO + ': ' + eur0(c.merce) + ' · ' + PREC + ': ' + eur0(c.p.merce) + '</span></li>';
   }).join("") : '<li class="muted">Nessun cliente trovato.</li>';
 }
 function apriCliente(i){
   var c = CLI[i];
   $("n-cliente").checked = true; mostraSezione("cliente");
   $("ris").innerHTML = ""; $("q").value = "";
-  var catOrd = Object.keys(c.cat).map(function(k){ return [+k, c.cat[k]]; }).sort(function(a, b){ return b[1] - a[1]; });
-  var maxCat = catOrd.length ? catOrd[0][1] : 1;
   var h = '<div class="card"><h2 style="margin-top:0">' + esc(c.nome) +
     (c.flag ? '<span class="badge" title="Sigla accanto all\'indirizzo nel PDF ordine">' + esc(c.flag) + '</span>' : '') + '</h2>' +
     '<p class="muted small">Cod. ' + esc(c.cod) + ' · ' + esc(c.citta) + ' ' + esc(c.prov) + (c.tipo ? ' · ' + esc(c.tipo) : '') + (c.net ? ' · network ' + esc(c.net) : '') +
       (c.anag ? '' : ' · non in anagrafica MAK 2026') + '</p>' +
     '<div class="kpi">' +
-      '<div><b>' + c.n + '</b><span>ordini</span></div>' +
-      '<div><b>' + eur0(c.merce) + '</b><span>merce (IVA escl.)</span></div>' +
+      '<div><b>' + c.n + '</b><span>ordini ' + ANNO + '</span></div>' +
+      '<div><b>' + eur0(c.merce) + '</b><span>merce ' + ANNO + ' (IVA escl.)</span></div>' +
       '<div><b>' + dataIt(c.ultimo) + '</b><span>ultimo ordine · ' + c.fermo + ' gg fa</span></div>' +
       '<div><b>' + (c.freq == null ? '—' : c.freq + ' gg') + '</b><span>tra un ordine e l\'altro</span></div>' +
-    '</div>' +
-    '<h3>Per categoria</h3>' +
-    catOrd.map(function(x){
-      return '<div class="barra"><span>' + esc(D.cat[x[0]]) + '</span><span><i style="width:' + Math.max(1, 100 * x[1] / maxCat).toFixed(1) + '%"></i></span><span class="num">' + eur0(x[1]) + '</span></div>';
-    }).join("") +
-    '<h3>Per mese</h3>' + grafico(perMese(c.ordini), 170) +
+    '</div>';
+  /* confronto con l'anno precedente */
+  var tg = TAGLIO.slice(3,5) + "/" + TAGLIO.slice(0,2);
+  h += '<h3>Confronto ' + PREC + ' / ' + ANNO + '</h3>' +
+    '<div class="kpi">' +
+      '<div><b>' + eur0(c.p.pp) + '</b><span>' + PREC + ' fino al ' + tg + '</span></div>' +
+      '<div><b>' + eur0(c.merce) + '</b><span>' + ANNO + ' fino al ' + tg + '</span></div>' +
+      '<div><b class="' + seg(c.delta) + '">' + eurS(c.delta) + '</b><span>differenza · ' + pct(c.p.pp, c.merce) + '</span></div>' +
+      '<div><b>' + eur0(c.p.q4) + '</b><span>' + PREC + ' dopo il ' + tg + ' (' + c.p.nq4 + ' ordini)</span></div>' +
+    '</div>';
+  var chiavi = {}; [c.cat, c.p.ppcat, c.p.q4cat].forEach(function(x){ Object.keys(x).forEach(function(k){ chiavi[k] = 1; }); });
+  var righeCat = Object.keys(chiavi).map(function(k){ return [+k, c.p.ppcat[k] || 0, c.cat[k] || 0, c.p.q4cat[k] || 0]; })
+    .sort(function(a, b){ return (b[1] + b[2] + b[3]) - (a[1] + a[2] + a[3]); });
+  h += '<div class="tabwrap"><table><tr><th>Categoria</th><th class="num">' + PREC + ' al ' + tg + '</th><th class="num">' + ANNO + '</th><th class="num">Differenza</th><th class="num">' + PREC + ' dopo</th></tr>' +
+    righeCat.map(function(x){
+      return '<tr><td>' + esc(D.cat[x[0]]) + '</td><td class="num">' + eur0(x[1]) + '</td><td class="num">' + eur0(x[2]) + '</td><td class="num ' + seg(x[2] - x[1]) + '">' + eurS(x[2] - x[1]) +
+             '</td><td class="num">' + eur0(x[3]) + '</td></tr>';
+    }).join("") + '</table></div>' +
+    '<h3>Per mese</h3><div class="leg">' + legenda() + '</div>' + grafico2(serieMesi(function(k){ return c.mesi[k]; }), 170) +
     '</div><div class="card"><h3 style="margin-top:0">Storico ordini</h3>';
+  var annoCorr = "";
   h += c.ordini.map(function(o){
     var sintesi = o[8].map(function(r){ return qta(r[3]) + "× " + r[1]; }).join(" · ");
-    return '<details class="ord"><summary><span class="d">' + dataIt(o[2]) + '</span><span class="t">' + esc(sintesi) + '</span><span class="num"><b>' + (o[9] ? 'omaggio' : eur(o[5])) + '</b></span></summary>' +
+    var testa = "";
+    if(o[2].slice(0,4) !== annoCorr){ annoCorr = o[2].slice(0,4); testa = '<div class="anno">' + annoCorr + '</div>'; }
+    return testa + '<details class="ord"><summary><span class="d">' + dataIt(o[2]) + '</span><span class="t">' + esc(sintesi) + '</span><span class="num"><b>' + (o[9] ? 'omaggio' : eur(o[5])) + '</b></span></summary>' +
       '<p class="small muted" style="margin:0 0 8px 4px">' + esc(o[0]) + ' · ore ' + esc(o[2].slice(11)) +
         (o[3] === "a" ? '<span class="badge a">inserito da te</span>' : (o[3] === "c" ? '<span class="badge">inserito dal cliente</span>' : '<span class="badge">inserito dalla sede</span>')) +
         (o[9] ? '<span class="badge">omaggio</span>' : '') +
@@ -327,7 +403,7 @@ function rigaCli(c, extra){
 var TH_CLI = '<tr><th>Cliente</th><th class="num">Ordini</th><th class="num">Merce</th><th class="num">Ultimo</th><th class="num">Giorni</th></tr>';
 function riepilogo(){
   var prov = $("r-prov").value, net = $("r-net").value, tipo = $("r-tipo").value, ord = $("r-ord").value;
-  var l = CLI.filter(function(c){
+  var l = CLIA.filter(function(c){
     return (!prov || c.prov === prov) && (!tipo || c.tipo === tipo) &&
            (!net || (net === "-" ? !c.net : c.net === net));
   });
@@ -343,16 +419,16 @@ function riepilogo(){
 /* ---------- sezione Fermi ---------- */
 function fermi(){
   var soglia = +$("f-soglia").value, min = +$("f-min").value;
-  var l = CLI.filter(function(c){ return c.n >= min && c.fermo >= soglia; }).sort(function(a, b){ return b.merce - a.merce; });
+  var l = CLIA.filter(function(c){ return c.n >= min && c.fermo >= soglia; }).sort(function(a, b){ return b.merce - a.merce; });
   var tot = l.reduce(function(s, c){ return s + c.merce; }, 0);
-  $("f-tot").textContent = l.length + " clienti fermi · " + eur0(tot) + " di merce ordinata nel periodo, in ordine di valore";
+  $("f-tot").textContent = l.length + " clienti fermi · " + eur0(tot) + " di merce ordinata nel " + ANNO + ", in ordine di valore";
   $("f-tab").innerHTML = TH_CLI + l.map(function(c){ return rigaCli(c); }).join("");
 }
 
 /* ---------- sezione Prodotti ---------- */
 function prodotti(){
   var agg = D.cat.map(function(){ return {merce:0, q:0, righe:0, cli:{}}; }), tot = 0;
-  D.ordini.forEach(function(o){ o[8].forEach(function(r){ var a = agg[r[7]]; a.merce += r[6]; a.q += r[3]; a.righe++; a.cli[o[1]] = 1; tot += r[6]; }); });
+  ORD.forEach(function(o){ o[8].forEach(function(r){ var a = agg[r[7]]; a.merce += r[6]; a.q += r[3]; a.righe++; a.cli[o[1]] = 1; tot += r[6]; }); });
   $("p-cat").innerHTML = '<tr><th>Categoria</th><th class="num">Merce</th><th class="num">%</th><th class="num">Pezzi</th><th class="num">Clienti</th></tr>' +
     D.cat.map(function(n, i){ var a = agg[i];
       return '<tr><td>' + esc(n) + '</td><td class="num">' + eur0(a.merce) + '</td><td class="num">' + (tot ? (100 * a.merce / tot).toFixed(1).replace(".", ",") : "0") +
@@ -360,10 +436,10 @@ function prodotti(){
 }
 function chiCompra(){
   var k = +$("p-sel").value;
-  var si = CLI.filter(function(c){ return c.cat[k]; }).sort(function(a, b){ return b.cat[k] - a.cat[k]; });
-  var no = CLI.filter(function(c){ return !c.cat[k]; }).sort(function(a, b){ return b.merce - a.merce; });
+  var si = CLIA.filter(function(c){ return c.cat[k]; }).sort(function(a, b){ return b.cat[k] - a.cat[k]; });
+  var no = CLIA.filter(function(c){ return !c.cat[k]; }).sort(function(a, b){ return b.merce - a.merce; });
   $("p-si-t").textContent = "Comprano " + D.cat[k] + " (" + si.length + ")";
-  $("p-no-t").textContent = "Mai comprato nel periodo (" + no.length + ")";
+  $("p-no-t").textContent = "Mai comprato nel " + ANNO + " (" + no.length + ")";
   $("p-si").innerHTML = '<tr><th>Cliente</th><th class="num">' + esc(D.cat[k]) + '</th></tr>' + si.map(function(c){
     return '<tr class="tap" data-cli="' + c.i + '"><td>' + esc(c.nome) + '<br><span class="muted small">' + esc(c.citta) + '</span></td><td class="num">' + eur0(c.cat[k]) + '</td></tr>'; }).join("");
   $("p-no").innerHTML = '<tr><th>Cliente</th><th class="num">Merce totale</th></tr>' + no.map(function(c){
@@ -371,7 +447,7 @@ function chiCompra(){
 }
 function articoli(){
   var k = $("p-art-cat").value, agg = {};
-  D.ordini.forEach(function(o){ o[8].forEach(function(r){
+  ORD.forEach(function(o){ o[8].forEach(function(r){
     if(k !== "" && r[7] !== +k) return;
     var a = agg[r[0]] || (agg[r[0]] = {cod:r[0], desc:r[1], q:0, merce:0, cli:{}});
     a.q += r[3]; a.merce += r[6]; a.cli[o[1]] = 1;
@@ -384,11 +460,108 @@ function articoli(){
 
 /* ---------- sezione Andamento ---------- */
 function andamento(){
-  var s = perMese(D.ordini);
-  $("a-graf").innerHTML = grafico(s, 240);
-  $("a-tab").innerHTML = '<tr><th>Mese</th><th class="num">Ordini</th><th class="num">Merce</th><th class="num">Clienti attivi</th><th class="num">Ordine medio</th></tr>' +
-    s.map(function(d){ return '<tr><td>' + d.et + ' ' + d.k.slice(0,4) + '</td><td class="num">' + d.n + '</td><td class="num">' + eur0(d.merce) +
-      '</td><td class="num">' + d.cli + '</td><td class="num">' + (d.n ? eur0(d.merce / d.n) : '—') + '</td></tr>'; }).join("");
+  var z = perMeseZona(), s = serieMesi(function(k){ return z[k] ? z[k].merce : 0; });
+  $("a-leg").innerHTML = legenda();
+  $("a-graf").innerHTML = grafico2(s, 240);
+  $("a-tab").innerHTML = '<tr><th>Mese</th><th class="num">' + PREC + '</th><th class="num">' + ANNO + '</th><th class="num">Var.</th><th class="num">Ordini ' + PREC + '</th><th class="num">Ordini ' + ANNO + '</th></tr>' +
+    s.map(function(d, i){
+      var mm = (i < 9 ? "0" : "") + (i + 1), a = z[PREC + "-" + mm], b = z[ANNO + "-" + mm];
+      return '<tr><td>' + d.et + '</td><td class="num">' + eur0(d.a) + '</td><td class="num">' + (b ? eur0(d.b) : '—') + '</td><td class="num ' + (b ? seg(d.b - d.a) : '') + '">' + (b ? pct(d.a, d.b) : '—') +
+             '</td><td class="num">' + (a ? a.n : 0) + '</td><td class="num">' + (b ? b.n : '—') + '</td></tr>';
+    }).join("") +
+    '<tr><td colspan="6" class="muted small">Il mese in corso è parziale: per il confronto a parità di periodo usa la sezione Confronto.</td></tr>';
+}
+
+/* ---------- sezione Confronto ---------- */
+function cliFiltrati(){
+  var prov = $("c-prov").value, net = $("c-net").value, tipo = $("c-tipo").value;
+  return CLI.filter(function(c){
+    return (!prov || c.prov === prov) && (!tipo || c.tipo === tipo) && (!net || (net === "-" ? !c.net : c.net === net));
+  });
+}
+function cella(c, sotto){
+  return '<td><b>' + esc(c.nome) + '</b><br><span class="muted small">' + esc(c.citta) + ' ' + esc(c.prov) + (sotto ? ' · ' + esc(sotto) : '') + '</span></td>';
+}
+function tab(th, righe){ return '<div class="tabwrap"><table><tr>' + th.map(function(t, i){ return '<th' + (i ? ' class="num"' : '') + '>' + t + '</th>'; }).join("") + '</tr>' + righe.join("") + '</table></div>'; }
+function confronto(){
+  var v = $("c-vista").value, l = cliFiltrati(), tg = TAGLIO.slice(3,5) + "/" + TAGLIO.slice(0,2), out = "", tot = "";
+  $("c-ord").hidden = v !== "delta"; $("c-pn").hidden = v !== "persi";
+  $("c-cat").hidden = v !== "mix"; $("c-mix").hidden = v !== "mix";
+  function S(f){ return l.reduce(function(s, c){ return s + f(c); }, 0); }
+  if(v === "sintesi"){
+    var a = S(function(c){ return c.p.pp; }), b = S(function(c){ return c.merce; });
+    var na = S(function(c){ return c.p.npp; }), nb = S(function(c){ return c.n; });
+    var ca = l.filter(function(c){ return c.p.npp > 0; }).length, cb = l.filter(function(c){ return c.n > 0; }).length;
+    var ent = l.filter(function(c){ return c.p.npp > 0 && c.n > 0; });
+    tot = "Dal 1° gennaio al " + tg + " di ciascun anno. Importi = merce ordinata sul B2B, non fatturato.";
+    out = tab(["", PREC, ANNO, "Var."], [
+      '<tr><td>Merce</td><td class="num">' + eur(a) + '</td><td class="num">' + eur(b) + '</td><td class="num ' + seg(b - a) + '">' + pct(a, b) + '</td></tr>',
+      '<tr><td>Ordini</td><td class="num">' + num(na, 0) + '</td><td class="num">' + num(nb, 0) + '</td><td class="num ' + seg(nb - na) + '">' + pct(na, nb) + '</td></tr>',
+      '<tr><td>Clienti ordinanti</td><td class="num">' + num(ca, 0) + '</td><td class="num">' + num(cb, 0) + '</td><td class="num ' + seg(cb - ca) + '">' + pct(ca, cb) + '</td></tr>',
+      '<tr><td>Ordine medio</td><td class="num">' + eur(na ? a / na : 0) + '</td><td class="num">' + eur(nb ? b / nb : 0) + '</td><td class="num ' + seg((nb ? b / nb : 0) - (na ? a / na : 0)) + '">' + pct(na ? a / na : 0, nb ? b / nb : 0) + '</td></tr>',
+      '<tr><td>' + PREC + ' dopo il ' + tg + '</td><td class="num">' + eur(S(function(c){ return c.p.q4; })) + '</td><td class="num">—</td><td class="num">—</td></tr>',
+      '<tr><td>' + PREC + ' anno intero</td><td class="num">' + eur(S(function(c){ return c.p.merce; })) + '</td><td class="num">—</td><td class="num">—</td></tr>'
+    ]) + '<h3>Clienti</h3>' + tab(["", "Clienti", PREC, ANNO], [
+      '<tr><td>In entrambi gli anni</td><td class="num">' + ent.length + '</td><td class="num">' + eur(ent.reduce(function(s, c){ return s + c.p.pp; }, 0)) + '</td><td class="num">' + eur(ent.reduce(function(s, c){ return s + c.merce; }, 0)) + '</td></tr>',
+      '<tr><td>&nbsp;&nbsp;di cui in crescita</td><td class="num">' + ent.filter(function(c){ return c.delta > 0; }).length + '</td><td class="num"></td><td class="num"></td></tr>',
+      '<tr><td>&nbsp;&nbsp;di cui in calo</td><td class="num">' + ent.filter(function(c){ return c.delta < 0; }).length + '</td><td class="num"></td><td class="num"></td></tr>',
+      '<tr><td>Solo ' + PREC + '</td><td class="num">' + (ca - ent.length) + '</td><td class="num">' + eur(a - ent.reduce(function(s, c){ return s + c.p.pp; }, 0)) + '</td><td class="num">—</td></tr>',
+      '<tr><td>Solo ' + ANNO + '</td><td class="num">' + (cb - ent.length) + '</td><td class="num">—</td><td class="num">' + eur(b - ent.reduce(function(s, c){ return s + c.merce; }, 0)) + '</td></tr>'
+    ]) + '<h3>Categorie</h3>' + tab(["Categoria", PREC, ANNO, "Differenza", "Var."],
+      D.cat.map(function(n, k){ return [n, S(function(c){ return c.p.ppcat[k] || 0; }), S(function(c){ return c.cat[k] || 0; })]; })
+        .filter(function(x){ return x[1] || x[2]; }).sort(function(x, y){ return (y[1] + y[2]) - (x[1] + x[2]); })
+        .map(function(x){ return '<tr><td>' + esc(x[0]) + '</td><td class="num">' + eur(x[1]) + '</td><td class="num">' + eur(x[2]) + '</td><td class="num ' + seg(x[2] - x[1]) + '">' + eurS(x[2] - x[1]) +
+                                 '</td><td class="num ' + seg(x[2] - x[1]) + '">' + pct(x[1], x[2]) + '</td></tr>'; }));
+  } else if(v === "delta"){
+    var calo = $("c-ord").value === "calo";
+    var r = l.filter(function(c){ return c.p.npp > 0 || c.n > 0; }).filter(function(c){ return calo ? c.delta < 0 : c.delta > 0; })
+             .sort(function(x, y){ return calo ? x.delta - y.delta : y.delta - x.delta; });
+    tot = r.length + " clienti " + (calo ? "in calo" : "in crescita") + " per " + eurS(r.reduce(function(s, c){ return s + c.delta; }, 0)) + " complessivi, a parità di periodo (fino al " + tg + ").";
+    out = tab(["Cliente", PREC, ANNO, "Differenza", "Var."], r.map(function(c){
+      return '<tr class="tap" data-cli="' + c.i + '">' + cella(c) + '<td class="num">' + eur(c.p.pp) + '</td><td class="num">' + eur(c.merce) + '</td><td class="num ' + seg(c.delta) + '"><b>' + eurS(c.delta) +
+             '</b></td><td class="num ' + seg(c.delta) + '">' + pct(c.p.pp, c.merce) + '</td></tr>'; }));
+  } else if(v === "persi"){
+    if($("c-pn").value === "persi"){
+      var r2 = l.filter(function(c){ return c.p.npp > 0 && c.n === 0; }).sort(function(x, y){ return y.p.merce - x.p.merce; });
+      tot = r2.length + " clienti ordinavano tra gennaio e il " + tg + " " + PREC + " e nel " + ANNO + " non hanno ancora ordinato: valevano " + eur(r2.reduce(function(s, c){ return s + c.p.pp; }, 0)) + " nel periodo.";
+      out = tab(["Cliente", PREC + " al " + tg, PREC + " anno", "Ordini " + PREC, "Ultimo ordine"], r2.map(function(c){
+        return '<tr class="tap" data-cli="' + c.i + '">' + cella(c, catPrincipale(c.p.cat)) + '<td class="num"><b>' + eur(c.p.pp) + '</b></td><td class="num">' + eur(c.p.merce) + '</td><td class="num">' + c.p.n +
+               '</td><td class="num">' + dataIt(c.ultimo) + '</td></tr>'; }));
+    } else {
+      var r3 = l.filter(function(c){ return c.p.n === 0 && c.n > 0; }).sort(function(x, y){ return y.merce - x.merce; });
+      tot = r3.length + " clienti hanno ordinato nel " + ANNO + " senza alcun ordine nel " + PREC + ": valgono " + eur(r3.reduce(function(s, c){ return s + c.merce; }, 0)) + ".";
+      out = tab(["Cliente", ANNO, "Ordini", "Primo ordine", "Ultimo ordine"], r3.map(function(c){
+        return '<tr class="tap" data-cli="' + c.i + '">' + cella(c, catPrincipale(c.cat)) + '<td class="num"><b>' + eur(c.merce) + '</b></td><td class="num">' + c.n + '</td><td class="num">' + dataIt(c.primoA) +
+               '</td><td class="num">' + dataIt(c.ultimoA) + '</td></tr>'; }));
+    }
+  } else if(v === "mix"){
+    var k = +$("c-cat").value, m = $("c-mix").value, nome = D.cat[k], r4;
+    if(m === "smesso"){
+      r4 = l.filter(function(c){ return c.p.ppcat[k] > 0 && !c.cat[k]; }).sort(function(x, y){ return y.p.ppcat[k] - x.p.ppcat[k]; });
+      tot = r4.length + " clienti compravano " + nome + " fino al " + tg + " " + PREC + " e nel " + ANNO + " non l'hanno più presa: " + eur(r4.reduce(function(s, c){ return s + c.p.ppcat[k]; }, 0)) + ".";
+      out = tab(["Cliente", nome + " " + PREC, "Totale " + ANNO, "Ultimo ordine"], r4.map(function(c){
+        return '<tr class="tap" data-cli="' + c.i + '">' + cella(c, c.n ? "ancora cliente" : "non ordina più") + '<td class="num"><b>' + eur(c.p.ppcat[k]) + '</b></td><td class="num">' + eur(c.merce) + '</td><td class="num">' + dataIt(c.ultimo) + '</td></tr>'; }));
+    } else if(m === "iniziato"){
+      r4 = l.filter(function(c){ return c.cat[k] > 0 && !c.p.cat[k]; }).sort(function(x, y){ return y.cat[k] - x.cat[k]; });
+      tot = r4.length + " clienti hanno comprato " + nome + " nel " + ANNO + " senza averla mai presa nel " + PREC + ": " + eur(r4.reduce(function(s, c){ return s + c.cat[k]; }, 0)) + ".";
+      out = tab(["Cliente", nome + " " + ANNO, "Totale " + ANNO, "Totale " + PREC], r4.map(function(c){
+        return '<tr class="tap" data-cli="' + c.i + '">' + cella(c, c.p.n ? "" : "cliente nuovo") + '<td class="num"><b>' + eur(c.cat[k]) + '</b></td><td class="num">' + eur(c.merce) + '</td><td class="num">' + eur(c.p.merce) + '</td></tr>'; }));
+    } else {
+      r4 = l.filter(function(c){ return c.n > 0 && !c.cat[k] && !c.p.cat[k]; }).sort(function(x, y){ return y.merce - x.merce; });
+      tot = r4.length + " clienti attivi nel " + ANNO + " non hanno mai comprato " + nome + " in due anni, in ordine di valore.";
+      out = tab(["Cliente", "Totale " + ANNO, "Totale " + PREC, "Ultimo ordine"], r4.map(function(c){
+        return '<tr class="tap" data-cli="' + c.i + '">' + cella(c, catPrincipale(c.cat)) + '<td class="num"><b>' + eur(c.merce) + '</b></td><td class="num">' + eur(c.p.merce) + '</td><td class="num">' + dataIt(c.ultimo) + '</td></tr>'; }));
+    }
+  } else {
+    var r5 = l.filter(function(c){ return c.p.nq4 > 0; }).sort(function(x, y){ return y.p.q4 - x.p.q4; });
+    tot = r5.length + " clienti hanno ordinato dopo il " + tg + " " + PREC + " per " + eur(r5.reduce(function(s, c){ return s + c.p.q4; }, 0)) +
+          ". In ordine di valore: è la lista di chi sentire adesso. Sotto il nome, cosa compravano in quel periodo.";
+    out = tab(["Cliente", PREC + " dopo il " + tg, "Ordini", ANNO + " finora", "Giorni dall'ultimo"], r5.map(function(c){
+      return '<tr class="tap" data-cli="' + c.i + '">' + cella(c, catPrincipale(c.p.q4cat)) + '<td class="num"><b>' + eur(c.p.q4) + '</b></td><td class="num">' + c.p.nq4 + '</td><td class="num">' +
+             (c.n ? eur(c.merce) : '<span class="neg">zero</span>') + '</td><td class="num">' + c.fermo + '</td></tr>'; }));
+  }
+  $("c-tot").textContent = tot;
+  $("c-out").innerHTML = out;
 }
 
 /* ---------- avvio ---------- */
@@ -399,25 +572,29 @@ function mostraSezione(v){
 function avvia(){
   prepara();
   $("lock").hidden = true; $("app").hidden = false;
-  $("sub").textContent = dataIt(D.meta.dal) + " → " + dataIt(D.meta.al);
-  var prov = {}; CLI.forEach(function(c){ if(c.prov) prov[c.prov] = (prov[c.prov] || 0) + 1; });
-  $("r-prov").innerHTML = '<option value="">Tutte le province</option>' + Object.keys(prov).sort(function(a, b){ return prov[b] - prov[a]; })
-    .map(function(p){ return '<option value="' + esc(p) + '">' + esc(p) + ' (' + prov[p] + ')</option>'; }).join("");
-  function opzioni(campo, tutte, vuoto){
-    var n = {}; CLI.forEach(function(c){ if(c[campo]) n[c[campo]] = (n[c[campo]] || 0) + 1; });
+  $("sub").textContent = PREC + " e " + ANNO + " · fino al " + dataIt(D.meta.al);
+  var note = document.querySelectorAll(".nota-anno");
+  for(var ni = 0; ni < note.length; ni++) note[ni].textContent = "Dati del " + ANNO + ". Per il " + PREC + " vedi Confronto e la scheda cliente.";
+  function opzioni(campo, tutte, vuoto, lista){
+    var n = {}; (lista || CLIA).forEach(function(c){ if(c[campo]) n[c[campo]] = (n[c[campo]] || 0) + 1; });
     return '<option value="">' + tutte + '</option>' + (vuoto ? '<option value="-">' + vuoto + '</option>' : '') +
       Object.keys(n).sort(function(a, b){ return n[b] - n[a]; })
         .map(function(k){ return '<option value="' + esc(k) + '">' + esc(k) + ' (' + n[k] + ')</option>'; }).join("");
   }
+  $("r-prov").innerHTML = opzioni("prov", "Tutte le province", "");
   $("r-net").innerHTML = opzioni("net", "Tutti i network", "Nessun network");
+  $("c-prov").innerHTML = opzioni("prov", "Tutte le province", "", CLI);
+  $("c-net").innerHTML = opzioni("net", "Tutti i network", "Nessun network", CLI);
+  $("c-tipo").innerHTML = opzioni("tipo", "Tutti i tipi di cliente", "", CLI);
   $("r-tipo").innerHTML = opzioni("tipo", "Tutti i tipi di cliente", "");
   var optCat = D.cat.map(function(n, i){ return '<option value="' + i + '">' + esc(n) + '</option>'; }).join("");
   $("p-sel").innerHTML = optCat;
   var pref = -1; D.cat.forEach(function(n, i){ if(pref < 0 && /ruotino/i.test(n)) pref = i; });
   if(pref >= 0) $("p-sel").value = String(pref);
   $("p-art-cat").innerHTML = '<option value="">Tutte le categorie</option>' + optCat;
-  riepilogo(); fermi(); prodotti(); chiCompra(); articoli(); andamento();
-  $("foot").innerHTML = num(D.meta.ordini, 0) + " ordini di " + num(D.meta.clienti, 0) + " clienti · aggiornato il " + esc(D.meta.build) +
+  $("c-cat").innerHTML = optCat;
+  riepilogo(); fermi(); prodotti(); chiCompra(); articoli(); andamento(); confronto();
+  $("foot").innerHTML = num(D.meta.ordini, 0) + " ordini di " + num(D.meta.clienti, 0) + " clienti, " + PREC + " e " + ANNO + " · aggiornato il " + esc(D.meta.build) +
     "<br>Solo ordini passati dal portale B2B. Importi = merce ordinata, IVA, spedizione e PFU esclusi. Non sono fatture: resi e note di credito non compaiono." +
     '<br><button class="link" id="b-esci" type="button">Dimentica la passphrase su questo dispositivo</button>';
 }
@@ -430,6 +607,7 @@ document.addEventListener("DOMContentLoaded", function(){
   $("r-ord").addEventListener("change", riepilogo);
   $("r-net").addEventListener("change", riepilogo);
   $("r-tipo").addEventListener("change", riepilogo);
+  ["c-vista", "c-prov", "c-net", "c-tipo", "c-ord", "c-pn", "c-cat", "c-mix"].forEach(function(id){ $(id).addEventListener("change", confronto); });
   $("f-soglia").addEventListener("change", fermi);
   $("f-min").addEventListener("change", fermi);
   $("p-sel").addEventListener("change", chiCompra);

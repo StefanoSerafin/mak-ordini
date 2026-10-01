@@ -14,8 +14,16 @@ cliente (da Mac, iPhone, iPad).
   limite è cablato in `data/estrai_mail.py`, `DAL_MINIMO`).
 - Le notifiche vanno spostate in `Ordini` a mano: un ordine rimasto in Posta in
   arrivo non viene visto finché non lo sposti.
-- Il database contiene 2025 e 2026. La **pagina mostra solo il 2026** (`PAGINA_DAL`
-  in `data/build.py`), finché non ci sono le viste di confronto tra i due anni.
+- Database e pagina contengono **2025 e 2026** (`PAGINA_DAL` in `data/build.py`).
+  Riepilogo, Fermi e Prodotti lavorano sull'anno corrente; la sezione **Confronto**,
+  l'Andamento e la scheda cliente mettono a fianco i due anni.
+- **Parità di periodo:** l'anno precedente viene confrontato fino allo stesso giorno
+  dell'ultimo ordine caricato (es. 1 gen–1 ott); il resto dell'anno precedente è
+  mostrato a parte ("dopo il gg/mm") ed è la base della vista "Ultimo trimestre".
+- Sezione Confronto, cinque viste: sintesi dei due anni; clienti in calo e in
+  crescita; persi e nuovi; mix prodotto (chi ha smesso, chi ha iniziato, chi non ha
+  mai comprato una categoria); ultimo trimestre (chi ordinava un anno fa). Tutte
+  filtrabili per provincia, network e tipo cliente.
 - Sono **ordini, non fatture**: resi, note di credito e modifiche fatte dopo
   l'ordine non compaiono. I totali sono "ordinato", non "fatturato".
 - Importo di riferimento = **merce** (somma delle righe), senza IVA, spedizione,

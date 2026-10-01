@@ -138,7 +138,7 @@ def parse_testo(testo):
                     note.append(r[len("Note Carrello"):].strip())
             elif r.startswith("Cliente ") and o["ragione_sociale"] is None:
                 corpo = r[len("Cliente "):]
-                mm = re.search(r"\s(?:Cod\. Cli\. MAK\s+)?(\d{6})\s+\d{2}$", corpo)
+                mm = re.search(r"\s(?:Cod\. Cli\. MAK\s+)?(\d{6})\s+\w{2}$", corpo)   # suffisso destinazione: 01, TK, OL...
                 if mm:
                     o["ragione_sociale"] = corpo[:mm.start()].strip()
                 else:

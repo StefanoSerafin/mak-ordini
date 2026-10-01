@@ -262,6 +262,11 @@ ORDINE 2
         self.assertEqual((o["imponibile"], o["iva"], o["totale"]), (457.57, 100.67, 558.24))
         self.assertEqual(o["righe"][0]["applicazione"], "SUBARU, XV, 2018 > G5")
 
+    def test_suffisso_destinazione_non_numerico(self):
+        for coda in ("Cod. Cli. MAK 000123 TK", "000123 OL"):
+            o = parse_testo(SEMPLICE.replace("Cod. Cli. MAK 000123 01", coda))
+            self.assertEqual(o["ragione_sociale"], "OFFICINA PROVA SNC", coda)
+
     def test_separatore_migliaia(self):
         self.assertEqual(parse_testo(MIGLIAIA)["righe"][0]["importo"], 1486.40)
 
