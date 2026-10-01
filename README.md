@@ -10,10 +10,12 @@ cliente (da Mac, iPhone, iPad).
 ## Fonte e limiti
 
 - **Fonte unica:** casella `Ordini` dell'account `MAK` in Mail, **dal
-  01/01/2026**. Lo script non legge altre caselle né messaggi più vecchi (il
+  01/01/2025**. Lo script non legge altre caselle né messaggi più vecchi (il
   limite è cablato in `data/estrai_mail.py`, `DAL_MINIMO`).
 - Le notifiche vanno spostate in `Ordini` a mano: un ordine rimasto in Posta in
   arrivo non viene visto finché non lo sposti.
+- Il database contiene 2025 e 2026. La **pagina mostra solo il 2026** (`PAGINA_DAL`
+  in `data/build.py`), finché non ci sono le viste di confronto tra i due anni.
 - Sono **ordini, non fatture**: resi, note di credito e modifiche fatte dopo
   l'ordine non compaiono. I totali sono "ordinato", non "fatturato".
 - Importo di riferimento = **merce** (somma delle righe), senza IVA, spedizione,
@@ -47,6 +49,11 @@ Dipendenze: `pip3 install pdfplumber cryptography openpyxl`.
 
 Dopo un'interruzione basta rilanciare con `--completo`: i messaggi già trattati
 (`data/log/messaggi.json`) scorrono senza essere riscaricati.
+
+**Appoggio temporaneo:** durante il download compare in `~/Downloads` una cartella
+`makordini_tmp_…`, rimossa a fine giro. Serve perché Mail è in sandbox: in Download
+scrive per diritto proprio, mentre nelle cartelle temporanee di sistema smette dopo
+circa 1.800 salvataggi (errore -10000 sui permessi) fino al riavvio di Mail.
 
 **Se Mail sembra bloccata:** una richiesta AppleScript andata in timeout continua
 a girare dentro Mail e rallenta tutte le successive. Aspetta qualche minuto, o

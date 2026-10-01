@@ -31,6 +31,7 @@ QUI = os.path.dirname(os.path.abspath(__file__))
 PDF_DIR = os.path.join(QUI, "pdf")
 LOG_DIR = os.path.join(QUI, "log")
 STATO = os.path.join(LOG_DIR, "messaggi.json")
+APPOGGIO = os.path.expanduser("~/Downloads")
 PROFILI = os.path.join(LOG_DIR, "profili.json")
 
 ACCOUNT = "MAK"
@@ -230,11 +231,12 @@ def estrai(dal=DAL_MINIMO, limite=None, completo=False, verbose=True, da_indice=
     tmp = None
     try:
         while True:
-            # cartella temporanea nuova a ogni blocco: su giri lunghi Mail a un certo
-            # punto perde il permesso di scrivere in quella vecchia
+            # Appoggio in ~/Downloads, cartella nuova a ogni blocco. Mail e' in sandbox:
+            # in Downloads scrive per diritto proprio, mentre nelle cartelle temporanee
+            # di sistema dopo ~1.800 salvataggi smette ("-10000, permessi") fino al riavvio.
             if tmp:
                 shutil.rmtree(tmp, ignore_errors=True)
-            tmp = tempfile.mkdtemp(prefix="makordini_")
+            tmp = tempfile.mkdtemp(prefix="makordini_tmp_", dir=APPOGGIO)
             righe, finito = None, False
             for _ in (1, 2):
                 try:
