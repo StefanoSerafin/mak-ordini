@@ -104,7 +104,7 @@ label.chk input{width:20px;height:20px}
   </div>
 
   <section class="sez on" id="s-cliente">
-    <input type="search" id="q" placeholder="Cerca cliente per nome, codice o città" autocapitalize="off" autocorrect="off">
+    <input type="search" id="q" placeholder="Cerca per nome, codice, città o network" autocapitalize="off" autocorrect="off">
     <ul class="ris" id="ris"></ul>
     <div id="scheda"></div>
   </section>
@@ -116,6 +116,7 @@ label.chk input{width:20px;height:20px}
       <option value="persi">Clienti persi e nuovi</option>
       <option value="mix">Mix prodotto: chi ha smesso, chi ha iniziato</option>
       <option value="q4">Ultimo trimestre: chi ordinava un anno fa</option>
+      <option value="network">Per network</option>
     </select>
     <div class="filtri" style="margin-top:8px">
       <select id="c-prov"></select>
@@ -124,6 +125,7 @@ label.chk input{width:20px;height:20px}
       <select id="c-ord" hidden>
         <option value="calo">Dal calo maggiore</option>
         <option value="crescita">Dalla crescita maggiore</option>
+        <option value="tutti">Tutti i clienti, per valore</option>
       </select>
       <select id="c-pn" hidden>
         <option value="persi">Persi: ordinavano, quest'anno zero</option>
@@ -148,6 +150,7 @@ label.chk input{width:20px;height:20px}
       <select id="r-tipo"></select>
       <select id="r-ord">
         <option value="merce">Ordina per merce</option>
+        <option value="prec">Ordina per totale anno precedente</option>
         <option value="n">Ordina per numero ordini</option>
         <option value="ultimo">Ordina per ultimo ordine (più recente)</option>
         <option value="fermo">Ordina per giorni dall'ultimo ordine</option>
@@ -289,7 +292,7 @@ function prepara(){
     c.fermo = giorniDa(c.ultimo);
     c.freq = c.n > 1 ? Math.round((new Date(c.ultimoA.slice(0,10)) - new Date(c.primoA.slice(0,10))) / 86400000 / (c.n - 1)) : null;
     c.delta = c.merce - c.p.pp;
-    c.cerca = (c.nome + " " + c.cod + " " + c.citta).toLowerCase();
+    c.cerca = (c.nome + " " + c.cod + " " + c.citta + " " + c.net + " " + c.tipo).toLowerCase();
   });
   ORD = D.ordini.filter(function(o){ return o[2].slice(0,4) === ANNO; });
   CLIA = CLI.filter(function(c){ return c.n > 0; });
@@ -335,11 +338,13 @@ function cerca(){
   if(q.length < 2){ ul.innerHTML = ""; return; }
   var parole = q.split(/\s+/);
   var tr = CLI.filter(function(c){ return parole.every(function(p){ return c.cerca.indexOf(p) >= 0; }); })
-              .sort(function(a, b){ return (b.merce + b.p.merce) - (a.merce + a.p.merce); }).slice(0, 30);
+              .sort(function(a, b){ return (b.merce + b.p.merce) - (a.merce + a.p.merce); });
+  var quanti = tr.length; tr = tr.slice(0, 60);
   ul.innerHTML = tr.length ? tr.map(function(c){
-    return '<li data-cli="' + c.i + '"><b>' + esc(c.nome) + '</b> <span class="muted small">' + esc(c.cod) + ' · ' + esc(c.citta) + ' ' + esc(c.prov) +
+    return '<li data-cli="' + c.i + '"><b>' + esc(c.nome) + '</b> <span class="muted small">' + esc(c.cod) + ' · ' + esc(c.citta) + ' ' + esc(c.prov) + (c.net ? ' · ' + esc(c.net) : '') +
            ' · ' + ANNO + ': ' + eur0(c.merce) + ' · ' + PREC + ': ' + eur0(c.p.merce) + '</span></li>';
-  }).join("") : '<li class="muted">Nessun cliente trovato.</li>';
+  }).join("") + (quanti > tr.length ? '<li class="muted small">Altri ' + (quanti - tr.length) + ' clienti: restringi la ricerca, oppure usa Confronto → Per network.</li>' : '')
+    : '<li class="muted">Nessun cliente trovato.</li>';
 }
 function apriCliente(i){
   var c = CLI[i];
@@ -363,14 +368,15 @@ function apriCliente(i){
       '<div><b>' + eur0(c.merce) + '</b><span>' + ANNO + ' fino al ' + tg + '</span></div>' +
       '<div><b class="' + seg(c.delta) + '">' + eurS(c.delta) + '</b><span>differenza · ' + pct(c.p.pp, c.merce) + '</span></div>' +
       '<div><b>' + eur0(c.p.q4) + '</b><span>' + PREC + ' dopo il ' + tg + ' (' + c.p.nq4 + ' ordini)</span></div>' +
+      '<div><b>' + eur0(c.p.merce) + '</b><span>totale anno ' + PREC + ' (' + c.p.n + ' ordini)</span></div>' +
     '</div>';
   var chiavi = {}; [c.cat, c.p.ppcat, c.p.q4cat].forEach(function(x){ Object.keys(x).forEach(function(k){ chiavi[k] = 1; }); });
   var righeCat = Object.keys(chiavi).map(function(k){ return [+k, c.p.ppcat[k] || 0, c.cat[k] || 0, c.p.q4cat[k] || 0]; })
     .sort(function(a, b){ return (b[1] + b[2] + b[3]) - (a[1] + a[2] + a[3]); });
-  h += '<div class="tabwrap"><table><tr><th>Categoria</th><th class="num">' + PREC + ' al ' + tg + '</th><th class="num">' + ANNO + '</th><th class="num">Differenza</th><th class="num">' + PREC + ' dopo</th></tr>' +
+  h += '<div class="tabwrap"><table><tr><th>Categoria</th><th class="num">' + PREC + ' al ' + tg + '</th><th class="num">' + ANNO + '</th><th class="num">Differenza</th><th class="num">' + PREC + ' dopo</th><th class="num">' + PREC + ' anno</th></tr>' +
     righeCat.map(function(x){
       return '<tr><td>' + esc(D.cat[x[0]]) + '</td><td class="num">' + eur0(x[1]) + '</td><td class="num">' + eur0(x[2]) + '</td><td class="num ' + seg(x[2] - x[1]) + '">' + eurS(x[2] - x[1]) +
-             '</td><td class="num">' + eur0(x[3]) + '</td></tr>';
+             '</td><td class="num">' + eur0(x[3]) + '</td><td class="num">' + eur0(x[1] + x[3]) + '</td></tr>';
     }).join("") + '</table></div>' +
     '<h3>Per mese</h3><div class="leg">' + legenda() + '</div>' + grafico2(serieMesi(function(k){ return c.mesi[k]; }), 170) +
     '</div><div class="card"><h3 style="margin-top:0">Storico ordini</h3>';
@@ -398,22 +404,22 @@ function apriCliente(i){
 /* ---------- sezione Riepilogo ---------- */
 function rigaCli(c, extra){
   return '<tr class="tap" data-cli="' + c.i + '"><td><b>' + esc(c.nome) + '</b><br><span class="muted small">' + esc(c.citta) + ' ' + esc(c.prov) + '</span></td>' +
-    '<td class="num">' + c.n + '</td><td class="num">' + eur0(c.merce) + '</td><td class="num">' + dataIt(c.ultimo) + '</td><td class="num">' + c.fermo + '</td>' + (extra || '') + '</tr>';
+    '<td class="num">' + c.n + '</td><td class="num">' + eur0(c.merce) + '</td><td class="num">' + eur0(c.p.merce) + '</td><td class="num">' + dataIt(c.ultimo) + '</td><td class="num">' + c.fermo + '</td>' + (extra || '') + '</tr>';
 }
-var TH_CLI = '<tr><th>Cliente</th><th class="num">Ordini</th><th class="num">Merce</th><th class="num">Ultimo</th><th class="num">Giorni</th></tr>';
+function thCli(){ return '<tr><th>Cliente</th><th class="num">Ordini ' + ANNO + '</th><th class="num">Merce ' + ANNO + '</th><th class="num">Totale ' + PREC + '</th><th class="num">Ultimo</th><th class="num">Giorni</th></tr>'; }
 function riepilogo(){
   var prov = $("r-prov").value, net = $("r-net").value, tipo = $("r-tipo").value, ord = $("r-ord").value;
   var l = CLIA.filter(function(c){
     return (!prov || c.prov === prov) && (!tipo || c.tipo === tipo) &&
            (!net || (net === "-" ? !c.net : c.net === net));
   });
-  var f = {merce:function(a, b){ return b.merce - a.merce; }, n:function(a, b){ return b.n - a.n || b.merce - a.merce; },
+  var f = {merce:function(a, b){ return b.merce - a.merce; }, prec:function(a, b){ return b.p.merce - a.p.merce; }, n:function(a, b){ return b.n - a.n || b.merce - a.merce; },
            ultimo:function(a, b){ return a.fermo - b.fermo; }, fermo:function(a, b){ return b.fermo - a.fermo; },
            nome:function(a, b){ return a.nome.localeCompare(b.nome); }}[ord];
   l.sort(f);
   var tot = l.reduce(function(s, c){ return s + c.merce; }, 0), no = l.reduce(function(s, c){ return s + c.n; }, 0);
   $("r-tot").textContent = num(l.length, 0) + " clienti · " + num(no, 0) + " ordini · " + eur0(tot) + " di merce";
-  $("r-tab").innerHTML = TH_CLI + l.map(function(c){ return rigaCli(c); }).join("");
+  $("r-tab").innerHTML = thCli() + l.map(function(c){ return rigaCli(c); }).join("");
 }
 
 /* ---------- sezione Fermi ---------- */
@@ -422,7 +428,7 @@ function fermi(){
   var l = CLIA.filter(function(c){ return c.n >= min && c.fermo >= soglia; }).sort(function(a, b){ return b.merce - a.merce; });
   var tot = l.reduce(function(s, c){ return s + c.merce; }, 0);
   $("f-tot").textContent = l.length + " clienti fermi · " + eur0(tot) + " di merce ordinata nel " + ANNO + ", in ordine di valore";
-  $("f-tab").innerHTML = TH_CLI + l.map(function(c){ return rigaCli(c); }).join("");
+  $("f-tab").innerHTML = thCli() + l.map(function(c){ return rigaCli(c); }).join("");
 }
 
 /* ---------- sezione Prodotti ---------- */
@@ -513,13 +519,15 @@ function confronto(){
         .map(function(x){ return '<tr><td>' + esc(x[0]) + '</td><td class="num">' + eur(x[1]) + '</td><td class="num">' + eur(x[2]) + '</td><td class="num ' + seg(x[2] - x[1]) + '">' + eurS(x[2] - x[1]) +
                                  '</td><td class="num ' + seg(x[2] - x[1]) + '">' + pct(x[1], x[2]) + '</td></tr>'; }));
   } else if(v === "delta"){
-    var calo = $("c-ord").value === "calo";
-    var r = l.filter(function(c){ return c.p.npp > 0 || c.n > 0; }).filter(function(c){ return calo ? c.delta < 0 : c.delta > 0; })
-             .sort(function(x, y){ return calo ? x.delta - y.delta : y.delta - x.delta; });
-    tot = r.length + " clienti " + (calo ? "in calo" : "in crescita") + " per " + eurS(r.reduce(function(s, c){ return s + c.delta; }, 0)) + " complessivi, a parità di periodo (fino al " + tg + ").";
-    out = tab(["Cliente", PREC, ANNO, "Differenza", "Var."], r.map(function(c){
-      return '<tr class="tap" data-cli="' + c.i + '">' + cella(c) + '<td class="num">' + eur(c.p.pp) + '</td><td class="num">' + eur(c.merce) + '</td><td class="num ' + seg(c.delta) + '"><b>' + eurS(c.delta) +
-             '</b></td><td class="num ' + seg(c.delta) + '">' + pct(c.p.pp, c.merce) + '</td></tr>'; }));
+    var modo = $("c-ord").value, calo = modo === "calo";
+    var r = l.filter(function(c){ return c.p.n > 0 || c.n > 0; });
+    if(modo === "tutti") r = r.sort(function(x, y){ return (y.merce + y.p.merce) - (x.merce + x.p.merce); });
+    else r = r.filter(function(c){ return calo ? c.delta < 0 : c.delta > 0; }).sort(function(x, y){ return calo ? x.delta - y.delta : y.delta - x.delta; });
+    tot = r.length + " clienti" + (modo === "tutti" ? "" : (calo ? " in calo" : " in crescita")) + ": differenza " + eurS(r.reduce(function(s, c){ return s + c.delta; }, 0)) +
+          " a parità di periodo (fino al " + tg + "). Totale anno " + PREC + ": " + eur(r.reduce(function(s, c){ return s + c.p.merce; }, 0)) + ".";
+    out = tab(["Cliente", PREC + " al " + tg, ANNO, "Differenza", "Var.", "Totale " + PREC], r.map(function(c){
+      return '<tr class="tap" data-cli="' + c.i + '">' + cella(c, c.net) + '<td class="num">' + eur(c.p.pp) + '</td><td class="num">' + eur(c.merce) + '</td><td class="num ' + seg(c.delta) + '"><b>' + eurS(c.delta) +
+             '</b></td><td class="num ' + seg(c.delta) + '">' + pct(c.p.pp, c.merce) + '</td><td class="num">' + eur(c.p.merce) + '</td></tr>'; }));
   } else if(v === "persi"){
     if($("c-pn").value === "persi"){
       var r2 = l.filter(function(c){ return c.p.npp > 0 && c.n === 0; }).sort(function(x, y){ return y.p.merce - x.p.merce; });
@@ -552,13 +560,26 @@ function confronto(){
       out = tab(["Cliente", "Totale " + ANNO, "Totale " + PREC, "Ultimo ordine"], r4.map(function(c){
         return '<tr class="tap" data-cli="' + c.i + '">' + cella(c, catPrincipale(c.cat)) + '<td class="num"><b>' + eur(c.merce) + '</b></td><td class="num">' + eur(c.p.merce) + '</td><td class="num">' + dataIt(c.ultimo) + '</td></tr>'; }));
     }
-  } else {
+  } else if(v === "q4"){
     var r5 = l.filter(function(c){ return c.p.nq4 > 0; }).sort(function(x, y){ return y.p.q4 - x.p.q4; });
     tot = r5.length + " clienti hanno ordinato dopo il " + tg + " " + PREC + " per " + eur(r5.reduce(function(s, c){ return s + c.p.q4; }, 0)) +
           ". In ordine di valore: è la lista di chi sentire adesso. Sotto il nome, cosa compravano in quel periodo.";
-    out = tab(["Cliente", PREC + " dopo il " + tg, "Ordini", ANNO + " finora", "Giorni dall'ultimo"], r5.map(function(c){
+    out = tab(["Cliente", PREC + " dopo il " + tg, "Ordini", ANNO + " finora", "Giorni dall'ultimo", "Totale " + PREC], r5.map(function(c){
       return '<tr class="tap" data-cli="' + c.i + '">' + cella(c, catPrincipale(c.p.q4cat)) + '<td class="num"><b>' + eur(c.p.q4) + '</b></td><td class="num">' + c.p.nq4 + '</td><td class="num">' +
-             (c.n ? eur(c.merce) : '<span class="neg">zero</span>') + '</td><td class="num">' + c.fermo + '</td></tr>'; }));
+             (c.n ? eur(c.merce) : '<span class="neg">zero</span>') + '</td><td class="num">' + c.fermo + '</td><td class="num">' + eur(c.p.merce) + '</td></tr>'; }));
+  } else if(v === "network"){
+    var g = {};
+    l.forEach(function(c){
+      if(!c.n && !c.p.n) return;
+      var k = c.net || "-", x = g[k] || (g[k] = {k:k, nome:c.net || "Nessun network", cli:0, cliA:0, pp:0, a:0, prec:0});
+      x.cli++; if(c.n) x.cliA++; x.pp += c.p.pp; x.a += c.merce; x.prec += c.p.merce;
+    });
+    var r6 = Object.keys(g).map(function(k){ return g[k]; }).sort(function(x, y){ return (y.a + y.prec) - (x.a + x.prec); });
+    tot = r6.length + " network. Tocca una riga per vedere i suoi clienti. Confronto a parità di periodo (fino al " + tg + ").";
+    out = tab(["Network", "Clienti", PREC + " al " + tg, ANNO, "Differenza", "Var.", "Totale " + PREC], r6.map(function(x){
+      return '<tr class="tap" data-net="' + esc(x.k) + '"><td><b>' + esc(x.nome) + '</b><br><span class="muted small">' + x.cliA + ' attivi nel ' + ANNO + '</span></td><td class="num">' + x.cli +
+             '</td><td class="num">' + eur(x.pp) + '</td><td class="num">' + eur(x.a) + '</td><td class="num ' + seg(x.a - x.pp) + '"><b>' + eurS(x.a - x.pp) + '</b></td><td class="num ' + seg(x.a - x.pp) + '">' +
+             pct(x.pp, x.a) + '</td><td class="num">' + eur(x.prec) + '</td></tr>'; }));
   }
   $("c-tot").textContent = tot;
   $("c-out").innerHTML = out;
@@ -617,6 +638,9 @@ document.addEventListener("DOMContentLoaded", function(){
     if(t && t.id === "b-esci"){ try { localStorage.removeItem(LS_KEY); } catch(x){} location.reload(); return; }
     while(t && t !== document){
       if(t.getAttribute && t.getAttribute("data-cli") != null){ apriCliente(+t.getAttribute("data-cli")); return; }
+      if(t.getAttribute && t.getAttribute("data-net") != null){
+        $("c-net").value = t.getAttribute("data-net"); $("c-vista").value = "delta"; $("c-ord").value = "tutti"; confronto(); window.scrollTo(0, 0); return;
+      }
       t = t.parentNode;
     }
   });

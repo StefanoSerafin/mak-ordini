@@ -20,10 +20,14 @@ cliente (da Mac, iPhone, iPad).
 - **Parità di periodo:** l'anno precedente viene confrontato fino allo stesso giorno
   dell'ultimo ordine caricato (es. 1 gen–1 ott); il resto dell'anno precedente è
   mostrato a parte ("dopo il gg/mm") ed è la base della vista "Ultimo trimestre".
-- Sezione Confronto, cinque viste: sintesi dei due anni; clienti in calo e in
-  crescita; persi e nuovi; mix prodotto (chi ha smesso, chi ha iniziato, chi non ha
-  mai comprato una categoria); ultimo trimestre (chi ordinava un anno fa). Tutte
-  filtrabili per provincia, network e tipo cliente.
+- Sezione Confronto, sei viste: sintesi dei due anni; clienti in calo e in
+  crescita (o tutti, per valore); persi e nuovi; mix prodotto (chi ha smesso, chi
+  ha iniziato, chi non ha mai comprato una categoria); ultimo trimestre (chi
+  ordinava un anno fa); per network (un tocco sulla riga apre i suoi clienti).
+  Tutte filtrabili per provincia, network e tipo cliente.
+- Il **totale dell'anno precedente** per cliente compare nella scheda, nel
+  Riepilogo, nei Fermi e nelle viste di confronto. La ricerca clienti accetta
+  anche il nome del network.
 - Sono **ordini, non fatture**: resi, note di credito e modifiche fatte dopo
   l'ordine non compaiono. I totali sono "ordinato", non "fatturato".
 - Importo di riferimento = **merce** (somma delle righe), senza IVA, spedizione,
