@@ -74,14 +74,52 @@ def dataset(dal=PAGINA_DAL):
                        UTENTE.get(r["inserito_da"], "x"), r["kit_completo"] or 0, 0 if om else r["merce_righe"],
                        r["spedizione"] or 0, 0 if om else (r["imponibile"] or 0), righe.get(r["id"], []),
                        1 if om else 0])
+    tel = telefonate(clienti, icli)
     per = con.execute("SELECT MIN(data_ora) a, MAX(data_ora) b FROM ordini WHERE data_ora >= ?", (dal,)).fetchone()
     meta = {
         "build": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "dal": (per["a"] or "")[:10], "al": (per["b"] or "")[:10],
-        "ordini": len(ordini), "clienti": len(clienti),
+        "ordini": len(ordini), "clienti": len(clienti), "telefonate": len(tel),
     }
     # formato posizionale (array) per tenere piccolo il file: le chiavi sono in index.template.html
-    return {"meta": meta, "cat": cat, "clienti": clienti, "ordini": ordini}
+    return {"meta": meta, "cat": cat, "clienti": clienti, "ordini": ordini, "tel": tel}
+
+
+# Telefonate registrate con Plaud (progetto Mak/Plaud Note Pro), già abbinate a un cliente.
+# Per ogni telefonata: la scheda del template «Chiamata cliente MAK», sezione per sezione.
+# Se l'archivio non c'è, la pagina resta quella dei soli ordini.
+CALLREC = os.path.join(os.path.dirname(RADICE), "Plaud Note Pro", "callrec.db")
+TITOLI_SCHEDA = [("cliente", "Cliente"), ("interlocutore", "Interlocutore"), ("tipo", "Tipo e richiesta"),
+                 ("domande", "Domande e risposte"), ("dati_tecnici", "Dati tecnici"), ("prodotti", "Prodotti e prezzi"),
+                 ("obiezioni", "Obiezioni"), ("da_fare", "Cosa devo fare"), ("esito", "Esito"),
+                 ("nota_personale", "Nota personale"), ("occasioni", "Occasioni")]
+
+
+def telefonate(clienti, icli):
+    """[indice cliente, data e ora, durata s, titolo, id Plaud senza «of_», [[titolo sezione, testo], …]].
+    Aggiunge a `clienti` quelli che hanno telefonate ma nessun ordine dal PAGINA_DAL."""
+    if not os.path.exists(CALLREC):
+        return []
+    sys.path.insert(0, os.path.dirname(CALLREC))
+    from callrec import scheda
+    tc = sqlite3.connect(f"file:{CALLREC}?mode=ro", uri=True)
+    tc.row_factory = sqlite3.Row
+    anag = {r["codice"]: r for r in tc.execute("SELECT codice, ragione_sociale, citta, provincia FROM clients")}
+    out = []
+    for r in tc.execute("SELECT id, title, started_at, duration_s, summary_raw, client_code FROM calls"
+                        " WHERE client_code IS NOT NULL AND client_code != '' ORDER BY started_at DESC"):
+        cod = r["client_code"]
+        if cod not in icli:
+            a = anag.get(cod)
+            icli[cod] = len(clienti)
+            clienti.append([cod, a["ragione_sociale"] if a else cod, (a["citta"] if a else "") or "",
+                            (a["provincia"] if a else "") or "", "", 1, "", ""])
+        sez = scheda.leggi(r["summary_raw"]) or {}
+        out.append([icli[cod], (r["started_at"] or "")[:16].replace("T", " "), r["duration_s"] or 0, r["title"] or "",
+                    r["id"][3:] if r["id"].startswith("of_") else r["id"],
+                    [[t, sez[k]] for k, t in TITOLI_SCHEDA if sez.get(k)]])
+    tc.close()
+    return out
 
 
 def cifra(plaintext, passphrase):
@@ -119,7 +157,7 @@ def build(passphrase=None, verbose=True):
         f.write(html)
     if verbose:
         print(f"index.html: {os.path.getsize(USCITA) / 1024:.0f} KB | {d['meta']['ordini']} ordini, "
-              f"{d['meta']['clienti']} clienti, periodo {d['meta']['dal']} -> {d['meta']['al']}")
+              f"{d['meta']['clienti']} clienti, {d['meta']['telefonate']} telefonate, periodo {d['meta']['dal']} -> {d['meta']['al']}")
     return d["meta"]
 
 

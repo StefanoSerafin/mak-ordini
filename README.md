@@ -44,6 +44,20 @@ cliente (da Mac, iPhone, iPad).
 - Il suffisso `(R)/(F)/(I)/(X)` accanto all'indirizzo nel PDF è salvato come
   `flag_cliente`; il significato non è noto e non incide sui totali.
 
+## Telefonate nella scheda cliente (dal 2026-10-16)
+
+La scheda cliente ha una sezione **Telefonate**: le telefonate registrate con Plaud e abbinate al cliente (archivio `Mak/Plaud Note Pro/callrec.db`, letto in sola lettura). Per ognuna c'è la scheda completa del template «Chiamata cliente MAK» (richiesta, domande e risposte, dati tecnici, prodotti e prezzi, obiezioni, cosa devo fare, esito, nota personale, occasioni) e il link per aprirla in Plaud. Compaiono anche i clienti con telefonate ma senza ordini B2B nel periodo; la ricerca mostra quante telefonate ha ogni cliente. Le telefonate non ancora abbinate a un cliente non ci sono: si abbinano con `abbina.py` nel progetto Plaud.
+
+**Aggiornamento ogni sera.** `Mak/Plaud Note Pro/notturno.sh` (20:00) lancia `data/pubblica.py`:
+- rigenera la pagina con la passphrase dal Portachiavi (`mak-ordini-pass`);
+- la pubblica solo se ordini o telefonate sono cambiati;
+- se l'ultimo commit è una build automatica, lo sostituisce (`--amend` + `push --force-with-lease`), così il repository non accumula una copia da 2 MB a sera. Le modifiche al codice restano commit normali.
+
+```bash
+python3 data/pubblica.py                   # build + pubblicazione se i dati sono cambiati
+python3 data/pubblica.py --non-pubblicare  # solo build
+```
+
 ## Uso
 
 ```bash

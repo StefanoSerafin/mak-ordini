@@ -69,6 +69,8 @@ svg .b{fill:var(--bar)} svg .b2{fill:var(--bar2)} svg .v{fill:var(--ink);font-si
 .leg{font-size:12px;color:var(--muted);margin:2px 0 6px} .leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 10px;vertical-align:-1px}
 .leg i.a{background:var(--bar2)} .leg i.b{background:var(--bar)}
 .anno{font-size:12px;font-weight:700;color:var(--muted);padding:12px 2px 4px;border-bottom:1px solid var(--line)}
+.tel .tsez{padding:4px 2px 8px 12px;border-left:3px solid var(--line);margin:0 0 6px 4px;font-size:14px;white-space:pre-line}
+.tel .tsez b{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:2px;white-space:normal}
 .due{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media (max-width:640px){.due{grid-template-columns:1fr}}
 footer{margin-top:22px;font-size:12px;color:var(--muted)}
@@ -267,7 +269,7 @@ function prepara(){
   ANNO = D.meta.al.slice(0,4); PREC = String(+ANNO - 1); TAGLIO = D.meta.al.slice(5,10);
   CLI = D.clienti.map(function(c, i){
     return {i:i, cod:c[0], nome:c[1], citta:c[2], prov:c[3], flag:c[4], anag:c[5], net:c[6] || "", tipo:c[7] || "",
-            ordini:[], n:0, merce:0, cat:{}, primoA:null, ultimoA:null, ultimo:null, mesi:{},
+            ordini:[], tel:[], n:0, merce:0, cat:{}, primoA:null, ultimoA:null, ultimo:null, mesi:{},
             /* anno precedente: pp = a parita' di periodo (fino al giorno TAGLIO), q4 = dopo */
             p:{n:0, merce:0, cat:{}, npp:0, pp:0, ppcat:{}, nq4:0, q4:0, q4cat:{}, ultimo:null}};
   });
@@ -288,6 +290,7 @@ function prepara(){
       else { p.nq4++; p.q4 += o[5]; somma(p.q4cat, o[8]); }
     }
   });
+  (D.tel || []).forEach(function(t){ CLI[t[0]].tel.push(t); });   // gia' ordinate dalla piu' recente
   CLI.forEach(function(c){
     c.fermo = giorniDa(c.ultimo);
     c.freq = c.n > 1 ? Math.round((new Date(c.ultimoA.slice(0,10)) - new Date(c.primoA.slice(0,10))) / 86400000 / (c.n - 1)) : null;
@@ -342,14 +345,38 @@ function cerca(){
   var quanti = tr.length; tr = tr.slice(0, 60);
   ul.innerHTML = tr.length ? tr.map(function(c){
     return '<li data-cli="' + c.i + '"><b>' + esc(c.nome) + '</b> <span class="muted small">' + esc(c.cod) + ' · ' + esc(c.citta) + ' ' + esc(c.prov) + (c.net ? ' · ' + esc(c.net) : '') +
-           ' · ' + ANNO + ': ' + eur0(c.merce) + ' · ' + PREC + ': ' + eur0(c.p.merce) + '</span></li>';
+           ' · ' + ANNO + ': ' + eur0(c.merce) + ' · ' + PREC + ': ' + eur0(c.p.merce) + (c.tel.length ? ' · ' + c.tel.length + ' telefonat' + (c.tel.length > 1 ? 'e' : 'a') : '') + '</span></li>';
   }).join("") + (quanti > tr.length ? '<li class="muted small">Altri ' + (quanti - tr.length) + ' clienti: restringi la ricerca, oppure usa Confronto → Per network.</li>' : '')
     : '<li class="muted">Nessun cliente trovato.</li>';
+}
+/* telefonate registrate con Plaud: [cliente, data e ora, durata s, titolo, id Plaud, [[sezione, testo], ...]] */
+function schedaTelefonate(c){
+  if(!c.tel.length) return '';
+  return '<div class="card tel"><h3 style="margin-top:0">Telefonate (' + c.tel.length + ')</h3>' +
+    '<p class="muted small">Schede scritte dall\'intelligenza artificiale di Plaud: verifica cifre e impegni prima di usarli.</p>' +
+    c.tel.map(function(t){
+      var tipo = '', sez = t[5];
+      for(var k = 0; k < sez.length; k++){ if(sez[k][0] === "Tipo e richiesta"){ tipo = sez[k][1].split("\n")[0].replace(/^[-*•\s]+/, ""); break; } }
+      return '<details class="ord"><summary><span class="d">' + dataIt(t[1]) + '</span><span class="t">' + esc(tipo || t[3]) + '</span>' +
+        '<span class="num small muted">' + Math.floor(t[2] / 60) + ':' + ('0' + t[2] % 60).slice(-2) + '</span></summary>' +
+        '<p class="small muted" style="margin:0 0 8px 4px">' + esc(t[3]) + ' · ore ' + esc(t[1].slice(11, 16)) +
+        ' · <a href="https://web.plaud.ai/file/' + encodeURIComponent(t[4]) + '" target="_blank" rel="noopener">apri in Plaud</a></p>' +
+        (sez.length ? sez.map(function(x){
+          return '<div class="tsez"><b>' + esc(x[0]) + '</b>' + esc(x[1].replace(/\*\*/g, "").replace(/^#+\s*/gm, "")) + '</div>';
+        }).join("") : '<p class="small muted" style="margin-left:4px">Nessuna scheda del template per questa telefonata: aprila in Plaud.</p>') +
+        '</details>';
+    }).join("") + '</div>';
 }
 function apriCliente(i){
   var c = CLI[i];
   $("n-cliente").checked = true; mostraSezione("cliente");
   $("ris").innerHTML = ""; $("q").value = "";
+  if(!c.ordini.length){   /* cliente con telefonate ma senza ordini B2B nel periodo */
+    $("scheda").innerHTML = '<div class="card"><h2 style="margin-top:0">' + esc(c.nome) + '</h2>' +
+      '<p class="muted small">Cod. ' + esc(c.cod) + ' · ' + esc(c.citta) + ' ' + esc(c.prov) + '</p>' +
+      '<p class="muted">Nessun ordine B2B dal ' + dataIt(D.meta.dal) + '.</p></div>' + schedaTelefonate(c);
+    window.scrollTo(0, 0); return;
+  }
   var h = '<div class="card"><h2 style="margin-top:0">' + esc(c.nome) +
     (c.flag ? '<span class="badge" title="Sigla accanto all\'indirizzo nel PDF ordine">' + esc(c.flag) + '</span>' : '') + '</h2>' +
     '<p class="muted small">Cod. ' + esc(c.cod) + ' · ' + esc(c.citta) + ' ' + esc(c.prov) + (c.tipo ? ' · ' + esc(c.tipo) : '') + (c.net ? ' · network ' + esc(c.net) : '') +
@@ -379,7 +406,7 @@ function apriCliente(i){
              '</td><td class="num">' + eur0(x[3]) + '</td><td class="num">' + eur0(x[1] + x[3]) + '</td></tr>';
     }).join("") + '</table></div>' +
     '<h3>Per mese</h3><div class="leg">' + legenda() + '</div>' + grafico2(serieMesi(function(k){ return c.mesi[k]; }), 170) +
-    '</div><div class="card"><h3 style="margin-top:0">Storico ordini</h3>';
+    '</div>' + schedaTelefonate(c) + '<div class="card"><h3 style="margin-top:0">Storico ordini</h3>';
   var annoCorr = "";
   h += c.ordini.map(function(o){
     var sintesi = o[8].map(function(r){ return qta(r[3]) + "× " + r[1]; }).join(" · ");
@@ -482,7 +509,7 @@ function andamento(){
 function cliFiltrati(){
   var prov = $("c-prov").value, net = $("c-net").value, tipo = $("c-tipo").value;
   return CLI.filter(function(c){
-    return (!prov || c.prov === prov) && (!tipo || c.tipo === tipo) && (!net || (net === "-" ? !c.net : c.net === net));
+    return c.ordini.length > 0 && (!prov || c.prov === prov) && (!tipo || c.tipo === tipo) && (!net || (net === "-" ? !c.net : c.net === net));
   });
 }
 function cella(c, sotto){
