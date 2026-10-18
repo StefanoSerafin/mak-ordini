@@ -22,8 +22,11 @@ import getpass
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
+
+import coordinate
 
 QUI = os.path.dirname(os.path.abspath(__file__))
 RADICE = os.path.dirname(QUI)
@@ -38,6 +41,17 @@ UTENTE = {"agente": "a", "cliente": "c"}
 # La pagina contiene gli ordini da questa data: anno corrente + anno precedente,
 # per le viste di confronto (sezione Confronto e scheda cliente).
 PAGINA_DAL = "2025-01-01"
+
+# Mappa sensori: marca dalla descrizione delle righe della categoria TPMS / MATE.
+# MX Universal = Autel (MX-Sensor); SI2024/SI2048/SI2076 = Huf (conferma di Stefano,
+# 2026-10-18). I kit valvole di ricambio non dicono quale sensore monta il cliente.
+# Stessa regola, per il popup, in index.template.html (SENS_ESCLUSI).
+CAT_SENSORI = "TPMS / MATE"
+RE_ESCLUSI = re.compile(r"^REPLAC\.KIT")
+RE_AUTEL = re.compile(r"AUTEL|MX UNIVERS")
+RE_MATE = re.compile(r"MULTIS|MULT\.TPMS|HUF|TPMS SI\d")
+FERMO_GIORNI = 180  # oltre: pallino sbiadito
+VENDOR = os.path.join(QUI, "vendor")
 
 
 def dataset(dal=PAGINA_DAL):
@@ -81,8 +95,69 @@ def dataset(dal=PAGINA_DAL):
         "dal": (per["a"] or "")[:10], "al": (per["b"] or "")[:10],
         "ordini": len(ordini), "clienti": len(clienti), "telefonate": len(tel),
     }
+    sens, senza = sensori(con, icli, meta["al"], dal)
+    meta["sens"] = {m: sum(1 for s in sens if s[3] == m) for m in "AMX"}
+    meta["sens"]["senza_coord"] = senza
     # formato posizionale (array) per tenere piccolo il file: le chiavi sono in index.template.html
-    return {"meta": meta, "cat": cat, "clienti": clienti, "ordini": ordini, "tel": tel}
+    return {"meta": meta, "cat": cat, "clienti": clienti, "ordini": ordini, "tel": tel, "sens": sens}
+
+
+def marca(descrizione):
+    """"A" Autel, "M" MATE/Huf, "X" altro sensore, None se la riga non conta (kit valvole)."""
+    d = (descrizione or "").upper()
+    if RE_ESCLUSI.search(d):
+        return None
+    if RE_AUTEL.search(d):
+        return "A"
+    if RE_MATE.search(d):
+        return "M"
+    return "X"
+
+
+def _righe_sensori(con, dal=PAGINA_DAL):
+    """{codice: {id_ordine: [data, {marca: pezzi}]}} per le righe sensore dal `dal`."""
+    out = {}
+    for r in con.execute("SELECT o.codice_cliente, o.id, o.data_ora, r.descrizione, r.qta FROM righe r"
+                         " JOIN ordini o ON o.id=r.ordine_id WHERE r.categoria=? AND o.data_ora >= ?",
+                         (CAT_SENSORI, dal)):
+        m = marca(r[3])
+        if m:
+            o = out.setdefault(r[0], {}).setdefault(r[1], [r[2] or "", {}])
+            o[1][m] = o[1].get(m, 0) + (r[4] or 0)
+    return out
+
+
+def clienti_sensori(con, dal=PAGINA_DAL):
+    return set(_righe_sensori(con, dal))
+
+
+def colore(ordini):
+    """Marca del pallino da {id: [data, {marca: pezzi}]}: quella dell'ultimo ordine con
+    Autel o MATE/Huf (piu' pezzi vince, parita' -> MATE); "X" se non ce n'e' nessuno."""
+    con_marca = [o for o in ordini.values() if "A" in o[1] or "M" in o[1]]
+    if not con_marca:
+        return "X"
+    ultimo = max(con_marca, key=lambda o: o[0])[1]
+    return "A" if ultimo.get("A", 0) > ultimo.get("M", 0) else "M"
+
+
+def sensori(con, icli, al, dal=PAGINA_DAL):
+    """Pallini della mappa: [icli, lat, lng, marca, id ultimo ordine sensori, fermo, approssimata].
+    Restituisce anche quanti clienti con sensori non hanno coordinate."""
+    per_cliente = _righe_sensori(con, dal)
+    coord = coordinate.coordinate(sorted(per_cliente), con)
+    limite = ((datetime.date.fromisoformat(al) - datetime.timedelta(days=FERMO_GIORNI)).isoformat()
+              if al else "")
+    out, senza = [], 0
+    for cod, ordini in sorted(per_cliente.items()):
+        if cod not in coord or cod not in icli:
+            senza += 1
+            continue
+        lat, lng, appross = coord[cod]
+        id_ult, (data_ult, _) = max(ordini.items(), key=lambda kv: kv[1][0])
+        out.append([icli[cod], round(lat, 5), round(lng, 5), colore(ordini), id_ult,
+                    1 if data_ult[:10] < limite else 0, appross])
+    return out, senza
 
 
 # Telefonate registrate con Plaud (progetto Mak/Plaud Note Pro), già abbinate a un cliente.
@@ -149,15 +224,21 @@ def build(passphrase=None, verbose=True):
     meta_pubblica = {"kdf": "PBKDF2-SHA256", "iter": PBKDF2_ITER, "cipher": "AES-GCM", "build": d["meta"]["build"]}
     with open(TEMPLATE, encoding="utf-8") as f:
         html = f.read()
-    for segnaposto in ("__PAYLOAD__", "__BUILD_META__"):
+    for segnaposto in ("__PAYLOAD__", "__BUILD_META__", "__LEAFLET_CSS__", "__LEAFLET_JS__"):
         if html.count(segnaposto) != 1:
             sys.exit(f"Il template deve contenere una sola volta {segnaposto}")
     html = html.replace("__PAYLOAD__", payload).replace("__BUILD_META__", json.dumps(meta_pubblica))
+    for segnaposto, nome in (("__LEAFLET_CSS__", "leaflet.css"), ("__LEAFLET_JS__", "leaflet.js")):
+        with open(os.path.join(VENDOR, nome), encoding="utf-8") as f:
+            html = html.replace(segnaposto, f.read())
     with open(USCITA, "w", encoding="utf-8") as f:
         f.write(html)
     if verbose:
         print(f"index.html: {os.path.getsize(USCITA) / 1024:.0f} KB | {d['meta']['ordini']} ordini, "
               f"{d['meta']['clienti']} clienti, {d['meta']['telefonate']} telefonate, periodo {d['meta']['dal']} -> {d['meta']['al']}")
+        s = d["meta"]["sens"]
+        print(f"mappa sensori: {len(d['sens'])} clienti (Autel {s['A']}, MATE/Huf {s['M']}, altri {s['X']}), "
+              f"{s['senza_coord']} senza coordinate")
     return d["meta"]
 
 

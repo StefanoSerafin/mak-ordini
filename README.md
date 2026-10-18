@@ -58,6 +58,38 @@ python3 data/pubblica.py                   # build + pubblicazione se i dati son
 python3 data/pubblica.py --non-pubblicare  # solo build
 ```
 
+## Mappa sensori (dal 2026-10-18)
+
+La sezione **Mappa** mostra su OpenStreetMap i clienti che hanno comprato sensori TPMS
+dal 2025 (righe della categoria `TPMS / MATE`):
+
+- **blu = Autel** (`MX UNIVERSAL` = MX-Sensor, `TPMS AUTEL 1SENS`); **rosso = MATE / Huf**
+  (`MULTISENS`, `MULTIS.`, `MULT.TPMS`, `HUF`, `TPMS SI2024/SI2048/SI2076` che sono Huf);
+  **grigio** = solo altri sensori (BEA019, PS8608, retrofit…). I `REPLAC.KIT 4 VALVE`
+  (kit valvole di ricambio) non contano. Regole in testa a `data/build.py`.
+- **Colore = marca dell'ultimo ordine** Autel o MATE/Huf: chi è passato da una marca
+  all'altra prende la nuova. Ordine misto: vince la marca con più pezzi (parità → MATE).
+- **Sbiadito** = nessun ordine di sensori da oltre 180 giorni rispetto all'ultimo ordine
+  caricato. **Bordo tratteggiato** = posizione approssimata (centro del comune).
+- Il tocco sul pallino apre l'ultimo ordine di sensori: data, numero, righe, importo.
+- Interruttori Autel / MATE-Huf / Altri con i conteggi. La vista iniziale inquadra
+  MI/MB/LO; i clienti fuori zona (es. Torino) ci sono ma vanno cercati spostando la mappa.
+- Leaflet 1.9.4 è inserito nella pagina dal build (`data/vendor/`, niente CDN); lo sfondo
+  stradale arriva da OpenStreetMap e senza rete non si vede (i pallini sì).
+
+**Coordinate** (`data/coordinate.py`): prima quelle del CRM (`Mak/mak-crm/index.html`,
+mappe Visite e Tool TPMS), poi la cache `data/log/coordinate.json`, poi OpenStreetMap
+Nominatim con indirizzo + CAP + città dal DB, poi CAP + città, poi solo CAP. Al massimo
+60 richieste per build, una al secondo; senza rete il build va avanti e i clienti
+mancanti arrivano la sera dopo. I «non trovato» si riprovano dopo 30 giorni.
+
+```bash
+python3 data/coordinate.py --mancanti   # geocodifica e mostra chi resta senza coordinate
+```
+
+Un pallino nel posto sbagliato: correggi `lat`/`lng` del cliente in
+`data/log/coordinate.json` (o le coordinate nel CRM, che vincono) e rifai il build.
+
 ## Uso
 
 ```bash
@@ -95,10 +127,12 @@ chiudi e riapri Mail, poi rilancia.
 | `data/schema.sql` | Schema SQLite (`clienti`, `ordini`, `righe`, `scarti`). |
 | `data/carica_db.py` | Carica i PDF nuovi in `data/ordini.db`, classifica, controlla la quadratura. |
 | `data/categorie.json` | Regole articolo → categoria (vince la prima che corrisponde). |
-| `data/build.py` | Dataset minimizzato → cifratura → `index.html`. |
+| `data/build.py` | Dataset minimizzato → cifratura → `index.html`; classifica i sensori per la mappa. |
+| `data/coordinate.py` | Coordinate dei clienti per la mappa: CRM → cache → Nominatim. |
+| `data/vendor/` | Leaflet 1.9.4 (JS + CSS), inserito inline nella pagina dal build. |
 | `index.template.html` | Web app (HTML/CSS/JS inline, nessuna CDN). |
 | `index.html` | **Generato.** Unico file con dati, cifrati. |
-| `tests/` | Test del parser su testi sintetici. |
+| `tests/` | Test del parser su testi sintetici e della classificazione sensori. |
 
 Non versionati (`.gitignore`): `data/pdf/`, `data/ordini.db`, `data/log/`,
 `data/ordini.plain.json`.
@@ -141,6 +175,10 @@ cosa finisce in "Altro".
 - Cambiare passphrase: rilancia `python3 data/build.py` con quella nuova. I
   vecchi `index.html` restano nella storia git, cifrati con la vecchia.
 - Da `Mak/MAK 2026.xlsx` si leggono solo le colonne `CLIENTE` e `COD.`.
+- Per la mappa entrano nel dataset cifrato le **coordinate** dei clienti con sensori
+  (5 decimali): di fatto indicano l'indirizzo, quindi sono protette dalla passphrase come
+  il resto. L'indirizzo in testo resta solo nel DB locale; a Nominatim va solo
+  l'indirizzo dell'officina, senza nome del cliente.
 
 ## Test
 

@@ -77,7 +77,18 @@ footer{margin-top:22px;font-size:12px;color:var(--muted)}
 #lock{max-width:420px;margin:12vh auto 0}
 label.chk{display:flex;gap:8px;align-items:center;margin:12px 0;font-size:14px}
 label.chk input{width:20px;height:20px}
+/* mappa sensori */
+.mtog{display:flex;flex-wrap:wrap;gap:6px 16px;margin:4px 0 8px}
+.mtog label.chk{margin:4px 0}
+.pal{display:inline-block;width:12px;height:12px;border-radius:50%;flex:0 0 auto}
+.pal.A{background:#1f6feb} .pal.M{background:#d1242f} .pal.X{background:#8c959f}
+#m-map{position:relative;z-index:0;height:70vh;min-height:360px;border-radius:12px;border:1px solid var(--line);background:var(--soft)}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--card);color:var(--ink)}
+.leaflet-popup-content{margin:12px 14px;font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-width:220px}
+.leaflet-popup-content table{font-size:13px;margin-top:6px}
+.leaflet-popup-content td{padding:4px 4px}
 </style>
+<style>__LEAFLET_CSS__</style>
 </head>
 <body>
 <div class="wrap">
@@ -103,6 +114,7 @@ label.chk input{width:20px;height:20px}
     <input type="radio" name="sez" id="n-fermi" value="fermi"><label for="n-fermi">Fermi</label>
     <input type="radio" name="sez" id="n-prodotti" value="prodotti"><label for="n-prodotti">Prodotti</label>
     <input type="radio" name="sez" id="n-andamento" value="andamento"><label for="n-andamento">Andamento</label>
+    <input type="radio" name="sez" id="n-mappa" value="mappa"><label for="n-mappa">Mappa</label>
   </div>
 
   <section class="sez on" id="s-cliente">
@@ -203,10 +215,22 @@ label.chk input{width:20px;height:20px}
     <div class="tabwrap"><table id="a-tab"></table></div>
   </section>
 
+  <section class="sez" id="s-mappa">
+    <h2>Clienti che comprano sensori TPMS</h2>
+    <div class="mtog" id="m-tog">
+      <label class="chk"><input type="checkbox" id="m-A" checked><span class="pal A"></span> Autel <span class="muted" id="m-nA"></span></label>
+      <label class="chk"><input type="checkbox" id="m-M" checked><span class="pal M"></span> MATE / Huf <span class="muted" id="m-nM"></span></label>
+      <label class="chk"><input type="checkbox" id="m-X" checked><span class="pal X"></span> Altri sensori <span class="muted" id="m-nX"></span></label>
+    </div>
+    <div id="m-map"></div>
+    <p class="muted small" id="m-nota"></p>
+  </section>
+
   <footer id="foot"></footer>
 </div>
 </div>
 
+<script>__LEAFLET_JS__</script>
 <script>
 "use strict";
 var PAYLOAD = "__PAYLOAD__";
@@ -612,10 +636,63 @@ function confronto(){
   $("c-out").innerHTML = out;
 }
 
+/* ---------- mappa sensori ----------
+   D.sens: [icli, lat, lng, marca A|M|X, id ultimo ordine sensori, fermo, approssimata].
+   Colore = marca dell'ultimo ordine Autel o MATE/Huf (regola in data/build.py). */
+var SENS_CAT = "TPMS / MATE", SENS_ESCLUSI = /^REPLAC\.KIT/i;   /* come RE_ESCLUSI in build.py */
+var SENS_COL = {A:"#1f6feb", M:"#d1242f", X:"#8c959f"}, SENS_NOME = {A:"Autel", M:"MATE / Huf", X:"Altri sensori"};
+var MAPPA = null, STRATI = {};
+function popupSensori(s){
+  var c = CLI[s[0]], o = null, ic = D.cat.indexOf(SENS_CAT);
+  for(var i = 0; i < c.ordini.length; i++) if(c.ordini[i][0] === s[4]){ o = c.ordini[i]; break; }
+  var h = '<b>' + esc(c.nome) + '</b><br><span class="muted small">' + esc(c.citta) + (c.prov ? " (" + esc(c.prov) + ")" : "") +
+          ' · <span style="color:' + SENS_COL[s[3]] + ';font-weight:700">' + SENS_NOME[s[3]] + '</span></span>';
+  if(!o) return h;
+  var righe = o[8].filter(function(r){ return r[7] === ic && !SENS_ESCLUSI.test(r[1]); }), tot = 0;
+  righe.forEach(function(r){ tot += r[6]; });
+  var gg = giorniDa(o[2]);
+  h += '<div style="margin-top:8px"><b>Ultimo ordine sensori:</b> ' + dataIt(o[2]) + (gg != null ? ' <span class="muted small">(' + gg + ' gg fa)</span>' : "") +
+       '<br><span class="muted small">n. ' + esc(o[0]) + '</span>' + (o[9] ? '<span class="badge">omaggio</span>' : "") + '</div>';
+  h += '<table>' + righe.map(function(r){
+    return '<tr><td>' + esc(r[1]) + '<br><span class="muted small">' + esc(r[0]) + '</span></td><td class="num">' + qta(r[3]) + '</td></tr>';
+  }).join("") + '<tr><td><b>Importo sensori</b></td><td class="num"><b>' + eur(tot) + '</b></td></tr></table>';
+  return h;
+}
+function mappa(){
+  if(MAPPA){ MAPPA.invalidateSize(); return; }
+  var sens = D.sens || [], n = {A:0, M:0, X:0}, bordi = [];
+  if(!window.L){ $("m-map").innerHTML = '<p class="muted" style="padding:14px">Libreria della mappa non disponibile.</p>'; return; }
+  MAPPA = L.map("m-map", {preferCanvas:true});
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19,
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(MAPPA);
+  ["X", "A", "M"].forEach(function(m){ STRATI[m] = L.layerGroup().addTo(MAPPA); });
+  sens.forEach(function(s){
+    n[s[3]]++;
+    if(/^(MI|MB|LO)$/.test(CLI[s[0]].prov)) bordi.push([s[1], s[2]]);   /* vista iniziale sulla zona, i fuori zona restano sulla mappa */
+    L.circleMarker([s[1], s[2]], {radius:7, weight:s[6] ? 2 : 1, dashArray:s[6] ? "3 3" : null, color:"#fff",
+      fillColor:SENS_COL[s[3]], fillOpacity:s[5] ? 0.3 : 0.85, opacity:s[5] ? 0.6 : 1})
+      .bindPopup(function(){ return popupSensori(s); }, {maxWidth:320}).addTo(STRATI[s[3]]);
+  });
+  ["A", "M", "X"].forEach(function(m){ $("m-n" + m).textContent = "(" + n[m] + ")"; });
+  if(bordi.length) MAPPA.fitBounds(bordi, {padding:[20, 20]}); else MAPPA.setView([45.55, 9.3], 10);
+  var senza = D.meta.sens ? D.meta.sens.senza_coord : 0;
+  $("m-nota").textContent = "Ordini dal " + dataIt(D.meta.dal) + " al " + dataIt(D.meta.al) + ". Colore = marca dell'ultimo ordine di sensori; " +
+    "sbiadito = nessun ordine di sensori da oltre 6 mesi; bordo tratteggiato = posizione approssimata (centro del comune). " +
+    "Kit valvole di ricambio esclusi." + (senza ? " " + senza + " clienti con sensori non sono sulla mappa perché mancano le coordinate." : "") +
+    " Lo sfondo stradale richiede la rete.";
+}
+function filtraMappa(){
+  ["A", "M", "X"].forEach(function(m){
+    if(!MAPPA) return;
+    if($("m-" + m).checked) MAPPA.addLayer(STRATI[m]); else MAPPA.removeLayer(STRATI[m]);
+  });
+}
+
 /* ---------- avvio ---------- */
 function mostraSezione(v){
   var s = document.querySelectorAll(".sez");
   for(var i = 0; i < s.length; i++) s[i].classList.toggle("on", s[i].id === "s-" + v);
+  if(v === "mappa") mappa();   /* creata alla prima apertura: Leaflet non misura un elemento nascosto */
 }
 function avvia(){
   prepara();
@@ -660,6 +737,7 @@ document.addEventListener("DOMContentLoaded", function(){
   $("f-min").addEventListener("change", fermi);
   $("p-sel").addEventListener("change", chiCompra);
   $("p-art-cat").addEventListener("change", articoli);
+  ["m-A", "m-M", "m-X"].forEach(function(id){ $(id).addEventListener("change", filtraMappa); });
   document.addEventListener("click", function(e){
     var t = e.target;
     if(t && t.id === "b-esci"){ try { localStorage.removeItem(LS_KEY); } catch(x){} location.reload(); return; }
