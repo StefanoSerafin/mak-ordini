@@ -102,8 +102,8 @@ I clienti nuovi si verificano da soli al build (massimo 60 per giro). Chiave
 `GOOGLE_MAPS_API_KEY` dall'ambiente o da `Mak/nuove-aperture/.env`; senza chiave si
 torna a CRM + OpenStreetMap. Costo: la ricerca chiede solo nome, indirizzo e posizione
 (fascia **Text Search Pro**, soglia gratuita propria, distinta dalla fascia Enterprise del
-giro nuove aperture) più Geocoding. La verifica completa del 2026-10-18 ha usato 594 Text
-Search Pro e 673 Geocoding. Non rilanciare `--tutti` senza motivo: ripaga tutto; per
+giro nuove aperture) più Geocoding. La verifica completa del 2026-10-18 ha usato circa 600 Text
+Search Pro e 690 Geocoding. Non rilanciare `--tutti` senza motivo: ripaga tutto; per
 cambiare le regole basta `--ridecidi`, che lavora sui dati Google già salvati.
 
 ```bash
