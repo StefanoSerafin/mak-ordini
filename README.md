@@ -70,25 +70,48 @@ dal 2025 (righe della categoria `TPMS / MATE`):
 - **Colore = marca dell'ultimo ordine** Autel o MATE/Huf: chi è passato da una marca
   all'altra prende la nuova. Ordine misto: vince la marca con più pezzi (parità → MATE).
 - **Sbiadito** = nessun ordine di sensori da oltre 180 giorni rispetto all'ultimo ordine
-  caricato. **Bordo tratteggiato** = posizione approssimata (centro del comune).
+  caricato. **Bordo tratteggiato** = posizione da verificare (vedi sotto).
 - Il tocco sul pallino apre l'ultimo ordine di sensori: data, numero, righe, importo.
 - Interruttori Autel / MATE-Huf / Altri con i conteggi. La vista iniziale inquadra
   MI/MB/LO; i clienti fuori zona (es. Torino) ci sono ma vanno cercati spostando la mappa.
 - Leaflet 1.9.4 è inserito nella pagina dal build (`data/vendor/`, niente CDN); lo sfondo
   stradale arriva da OpenStreetMap e senza rete non si vede (i pallini sì).
 
-**Coordinate** (`data/coordinate.py`): prima quelle del CRM (`Mak/mak-crm/index.html`,
-mappe Visite e Tool TPMS), poi la cache `data/log/coordinate.json`, poi OpenStreetMap
-Nominatim con indirizzo + CAP + città dal DB, poi CAP + città, poi solo CAP. Al massimo
-60 richieste per build, una al secondo; senza rete il build va avanti e i clienti
-mancanti arrivano la sera dopo. I «non trovato» si riprovano dopo 30 giorni.
+**Coordinate** (`data/coordinate.py`, rifatte il 2026-10-18). Le coordinate delle mappe del
+CRM sono risultate **inaffidabili**: per 327 clienti su 497 il punto era a più di 2 km
+dall'officina, anche con l'indirizzo giusto. Ora vale **dove sta l'officina** (scelta di Stefano):
+
+1. per ogni cliente si geocodifica con Google l'indirizzo dell'ordine e, se diverso,
+   quello del CRM, e si cerca l'attività su Google Places per ragione sociale + città;
+2. si usa il punto dell'attività Google, in quest'ordine: stesso nome e stessa via +
+   civico; attività entro 300 m; stesso nome entro 1,5 km; stessa via + civico + comune;
+   stesso nome nello stesso comune. Si confronta il **testo** dell'indirizzo perché nel DB
+   il CAP è spesso quello vecchio (20090, 20010, 20020…) e Google Geocoding mette
+   l'indirizzo nel comune sbagliato (Assago → Cesano Boscone, Lainate → Busto Garolfo);
+3. senza attività riconoscibile: l'indirizzo dell'ordine, se preciso al civico e nel
+   comune giusto; altrimenti il cliente va in `data/log/coordinate_da_controllare.md`
+   (punto provvisorio, bordo tratteggiato sulla mappa);
+4. le correzioni a mano vanno in `data/log/coordinate_manuali.json` e vincono su tutto
+   (`"provvisorio": true` = ancora da confermare).
+
+Esito al 2026-10-18: 573 clienti verificati in automatico, 4 decisi a mano (Corsico
+Ricambi, Auto Randazzo, Alfa Service Auto, Lorenzo Gomme con sede legale a Taranto),
+5 provvisori da confermare con Stefano.
+
+I clienti nuovi si verificano da soli al build (massimo 60 per giro). Chiave
+`GOOGLE_MAPS_API_KEY` dall'ambiente o da `Mak/nuove-aperture/.env`; senza chiave si
+torna a CRM + OpenStreetMap. Costo: la ricerca chiede solo nome, indirizzo e posizione
+(fascia **Text Search Pro**, soglia gratuita propria, distinta dalla fascia Enterprise del
+giro nuove aperture) più Geocoding. La verifica completa del 2026-10-18 ha usato 594 Text
+Search Pro e 673 Geocoding. Non rilanciare `--tutti` senza motivo: ripaga tutto; per
+cambiare le regole basta `--ridecidi`, che lavora sui dati Google già salvati.
 
 ```bash
-python3 data/coordinate.py --mancanti   # geocodifica e mostra chi resta senza coordinate
+python3 data/coordinate.py --verifica          # verifica i clienti non ancora verificati
+python3 data/coordinate.py --verifica --tutti  # rifà tutto (chiamate Google)
+python3 data/coordinate.py --ridecidi          # rifà le scelte dai dati salvati (gratis)
+python3 data/coordinate.py --mancanti          # riepilogo + elenco da controllare
 ```
-
-Un pallino nel posto sbagliato: correggi `lat`/`lng` del cliente in
-`data/log/coordinate.json` (o le coordinate nel CRM, che vincono) e rifai il build.
 
 ## Uso
 
@@ -128,11 +151,11 @@ chiudi e riapri Mail, poi rilancia.
 | `data/carica_db.py` | Carica i PDF nuovi in `data/ordini.db`, classifica, controlla la quadratura. |
 | `data/categorie.json` | Regole articolo → categoria (vince la prima che corrisponde). |
 | `data/build.py` | Dataset minimizzato → cifratura → `index.html`; classifica i sensori per la mappa. |
-| `data/coordinate.py` | Coordinate dei clienti per la mappa: CRM → cache → Nominatim. |
+| `data/coordinate.py` | Coordinate dei clienti per la mappa: correzioni a mano → verifica Google (officina + indirizzo) → CRM/OpenStreetMap. |
 | `data/vendor/` | Leaflet 1.9.4 (JS + CSS), inserito inline nella pagina dal build. |
 | `index.template.html` | Web app (HTML/CSS/JS inline, nessuna CDN). |
 | `index.html` | **Generato.** Unico file con dati, cifrati. |
-| `tests/` | Test del parser su testi sintetici e della classificazione sensori. |
+| `tests/` | Test del parser, della classificazione sensori e delle regole delle coordinate. |
 
 Non versionati (`.gitignore`): `data/pdf/`, `data/ordini.db`, `data/log/`,
 `data/ordini.plain.json`.
@@ -177,8 +200,8 @@ cosa finisce in "Altro".
 - Da `Mak/MAK 2026.xlsx` si leggono solo le colonne `CLIENTE` e `COD.`.
 - Per la mappa entrano nel dataset cifrato le **coordinate** dei clienti con sensori
   (5 decimali): di fatto indicano l'indirizzo, quindi sono protette dalla passphrase come
-  il resto. L'indirizzo in testo resta solo nel DB locale; a Nominatim va solo
-  l'indirizzo dell'officina, senza nome del cliente.
+  il resto. L'indirizzo in testo resta solo nel DB locale. Per la verifica, indirizzo e
+  ragione sociale dell'officina vanno a Google Maps (sono dati pubblici dell'attività).
 
 ## Test
 

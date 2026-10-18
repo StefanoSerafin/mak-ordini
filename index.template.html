@@ -677,7 +677,7 @@ function mappa(){
   if(bordi.length) MAPPA.fitBounds(bordi, {padding:[20, 20]}); else MAPPA.setView([45.55, 9.3], 10);
   var senza = D.meta.sens ? D.meta.sens.senza_coord : 0;
   $("m-nota").textContent = "Ordini dal " + dataIt(D.meta.dal) + " al " + dataIt(D.meta.al) + ". Colore = marca dell'ultimo ordine di sensori; " +
-    "sbiadito = nessun ordine di sensori da oltre 6 mesi; bordo tratteggiato = posizione approssimata (centro del comune). " +
+    "sbiadito = nessun ordine di sensori da oltre 6 mesi; bordo tratteggiato = posizione da verificare. " +
     "Kit valvole di ricambio esclusi." + (senza ? " " + senza + " clienti con sensori non sono sulla mappa perché mancano le coordinate." : "") +
     " Lo sfondo stradale richiede la rete.";
 }
