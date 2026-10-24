@@ -58,6 +58,22 @@ python3 data/pubblica.py                   # build + pubblicazione se i dati son
 python3 data/pubblica.py --non-pubblicare  # solo build
 ```
 
+## Preventivi (dal 2026-10-24)
+
+I preventivi fatti con la webapp `mak-preventivi` arrivano dall'archivio privato `Mak/mak-preventivi-dati` (repo `StefanoSerafin/mak-preventivi-dati`, un file per preventivo) nelle tabelle `preventivi` e `preventivi_articoli`, con `data/preventivi.py`:
+
+```bash
+python3 data/preventivi.py clienti     # file madre -> clienti.json dell'archivio (solo codice, nome, listino, network)
+python3 data/preventivi.py notte       # pull dell'archivio, import, esiti
+python3 data/preventivi.py riepilogo   # tabella per mese ed esito
+```
+
+- **Esito**, sugli ordini del cliente nei **30 giorni** dopo il preventivo, chiunque li abbia inseriti: **riuscito** (stesso codice articolo di una ruota proposta: per l'acciaio il codice `F…`), **riuscito con altra ruota** (ruota in lega o acciaio dello stesso diametro), **non riuscito** (30 giorni senza), **in corso**, **da abbinare** (senza codice cliente). Gli ordini entrano il lunedì: l'esito può arrivare qualche giorno dopo.
+- **Abbinamento**: il cliente scelto nella webapp; per un nome scritto a mano, il cliente con lo stesso nome (senza forme societarie); a mano in `data/log/preventivi_abbinamenti.json` (`{"id preventivo": "codice"}`). Un preventivo tolto dall'archivio esce anche dal database.
+- **Pagina**: sezione «Preventivi» nella scheda cliente (data, vettura, ruote, netto, esito) e voce **Preventivi** con riepilogo, tabelle per mese, cliente, modello e diametro, elenco da abbinare. Tasso di riuscita = (riusciti + altra ruota) / chiusi.
+- **Automatismi**: `notturno.sh` (20:00) aggiorna elenco clienti, preventivi ed esiti; il briefing del lunedì ricalcola gli esiti dopo gli ordini nuovi e elenca i «Preventivi senza ordine da richiamare» (in corso, fatti tra 30 e 7 giorni prima); le pagine cliente del wiki hanno la sezione «Preventivi».
+- Test: `python3 -m unittest discover -s tests` (dati inventati: il repo è pubblico).
+
 ## Mappa sensori (dal 2026-10-18)
 
 La sezione **Mappa** mostra su OpenStreetMap i clienti che hanno comprato sensori TPMS

@@ -50,6 +50,9 @@ tr.tap{cursor:pointer}
 .ris{list-style:none;margin:8px 0 0;padding:0}
 .ris li{padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer}
 details.ord{border-bottom:1px solid var(--line)}
+.es{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;background:var(--soft);color:var(--muted)}
+.es.ok{background:var(--ok);color:#fff} .es.ok2{background:transparent;color:var(--ok);border:1px solid var(--ok)}
+.es.ko{background:transparent;color:var(--accent);border:1px solid var(--accent)}
 details.ord summary{list-style:none;display:flex;gap:10px;align-items:baseline;padding:10px 2px;cursor:pointer}
 details.ord summary::-webkit-details-marker{display:none}
 details.ord summary .d{flex:0 0 86px;font-variant-numeric:tabular-nums}
@@ -115,6 +118,7 @@ label.chk input{width:20px;height:20px}
     <input type="radio" name="sez" id="n-prodotti" value="prodotti"><label for="n-prodotti">Prodotti</label>
     <input type="radio" name="sez" id="n-andamento" value="andamento"><label for="n-andamento">Andamento</label>
     <input type="radio" name="sez" id="n-mappa" value="mappa"><label for="n-mappa">Mappa</label>
+    <input type="radio" name="sez" id="n-preventivi" value="preventivi"><label for="n-preventivi">Preventivi</label>
   </div>
 
   <section class="sez on" id="s-cliente">
@@ -226,6 +230,12 @@ label.chk input{width:20px;height:20px}
     <p class="muted small" id="m-nota"></p>
   </section>
 
+  <section class="sez" id="s-preventivi">
+    <h2>Preventivi</h2>
+    <p class="muted small">Preventivi fatti con la webapp e confrontati con gli ordini dei 30 giorni dopo: <b>riuscito</b> = il cliente ha ordinato una ruota proposta; <b>altra ruota</b> = ha ordinato un'altra ruota dello stesso diametro; <b>non riuscito</b> = 30 giorni senza; <b>in corso</b> = meno di 30 giorni. Gli ordini entrano il lunedì: l'esito può arrivare qualche giorno dopo.</p>
+    <div id="p-corpo"></div>
+  </section>
+
   <footer id="foot"></footer>
 </div>
 </div>
@@ -293,7 +303,7 @@ function prepara(){
   ANNO = D.meta.al.slice(0,4); PREC = String(+ANNO - 1); TAGLIO = D.meta.al.slice(5,10);
   CLI = D.clienti.map(function(c, i){
     return {i:i, cod:c[0], nome:c[1], citta:c[2], prov:c[3], flag:c[4], anag:c[5], net:c[6] || "", tipo:c[7] || "",
-            ordini:[], tel:[], n:0, merce:0, cat:{}, primoA:null, ultimoA:null, ultimo:null, mesi:{},
+            ordini:[], tel:[], prev:[], n:0, merce:0, cat:{}, primoA:null, ultimoA:null, ultimo:null, mesi:{},
             /* anno precedente: pp = a parita' di periodo (fino al giorno TAGLIO), q4 = dopo */
             p:{n:0, merce:0, cat:{}, npp:0, pp:0, ppcat:{}, nq4:0, q4:0, q4cat:{}, ultimo:null}};
   });
@@ -315,6 +325,7 @@ function prepara(){
     }
   });
   (D.tel || []).forEach(function(t){ CLI[t[0]].tel.push(t); });   // gia' ordinate dalla piu' recente
+  (D.prev || []).forEach(function(p){ if(p[0] >= 0) CLI[p[0]].prev.push(p); });   // idem
   CLI.forEach(function(c){
     c.fermo = giorniDa(c.ultimo);
     c.freq = c.n > 1 ? Math.round((new Date(c.ultimoA.slice(0,10)) - new Date(c.primoA.slice(0,10))) / 86400000 / (c.n - 1)) : null;
@@ -369,9 +380,67 @@ function cerca(){
   var quanti = tr.length; tr = tr.slice(0, 60);
   ul.innerHTML = tr.length ? tr.map(function(c){
     return '<li data-cli="' + c.i + '"><b>' + esc(c.nome) + '</b> <span class="muted small">' + esc(c.cod) + ' · ' + esc(c.citta) + ' ' + esc(c.prov) + (c.net ? ' · ' + esc(c.net) : '') +
-           ' · ' + ANNO + ': ' + eur0(c.merce) + ' · ' + PREC + ': ' + eur0(c.p.merce) + (c.tel.length ? ' · ' + c.tel.length + ' telefonat' + (c.tel.length > 1 ? 'e' : 'a') : '') + '</span></li>';
+           ' · ' + ANNO + ': ' + eur0(c.merce) + ' · ' + PREC + ': ' + eur0(c.p.merce) + (c.tel.length ? ' · ' + c.tel.length + ' telefonat' + (c.tel.length > 1 ? 'e' : 'a') : '') +
+           (c.prev.length ? ' · ' + c.prev.length + ' preventiv' + (c.prev.length > 1 ? 'i' : 'o') : '') + '</span></li>';
   }).join("") + (quanti > tr.length ? '<li class="muted small">Altri ' + (quanti - tr.length) + ' clienti: restringi la ricerca, oppure usa Confronto → Per network.</li>' : '')
     : '<li class="muted">Nessun cliente trovato.</li>';
+}
+/* preventivi della webapp: [cliente o -1, data e ora, vettura, esito, [[modello, finitura, misure, netto], ...], nome scritto, data esito] */
+var ESITI = {riuscito:["Riuscito","ok"], riuscito_altra_ruota:["Altra ruota","ok2"], non_riuscito:["Non riuscito","ko"],
+             in_corso:["In corso",""], da_abbinare:["Da abbinare",""]};
+function badgeEsito(e){ var x = ESITI[e] || [e, ""]; return '<span class="es ' + x[1] + '">' + esc(x[0]) + '</span>'; }
+function ruoteProposte(p){
+  return p[4].map(function(a){ return a[0] + (a[1] ? " " + a[1].toLowerCase() : ""); }).join(" · ");
+}
+function schedaPreventivi(c){
+  if(!c.prev.length) return '';
+  var ok = c.prev.filter(function(p){ return p[3] === "riuscito" || p[3] === "riuscito_altra_ruota"; }).length;
+  return '<div class="card"><h3 style="margin-top:0">Preventivi (' + c.prev.length + (ok ? ', ' + ok + ' riusciti' : '') + ')</h3>' +
+    c.prev.map(function(p){
+      return '<details class="ord"><summary><span class="d">' + dataIt(p[1]) + '</span><span class="t">' + esc(p[2]) + '</span>' +
+        badgeEsito(p[3]) + '</summary>' +
+        '<div class="tabwrap"><table><tr><th>Ruota proposta</th><th>Misure</th><th class="num">Netto</th></tr>' +
+        p[4].map(function(a){ return '<tr><td>' + esc(a[0]) + ' <span class="muted small">' + esc(a[1]) + '</span></td><td class="small">' + esc(a[2]) + '</td><td class="num">' + eur(a[3]) + '</td></tr>'; }).join("") +
+        '</table></div>' + (p[6] ? '<p class="small muted" style="margin:6px 4px">Ordine del ' + dataIt(p[6]) + '</p>' : '') + '</details>';
+    }).join("") + '</div>';
+}
+function sezionePreventivi(){
+  var P = D.prev || [];
+  if(!P.length){ $("p-corpo").innerHTML = '<div class="card muted">Ancora nessun preventivo salvato dalla webapp.</div>'; return; }
+  function conta(lista){
+    var n = {riuscito:0, riuscito_altra_ruota:0, non_riuscito:0, in_corso:0, da_abbinare:0};
+    lista.forEach(function(p){ n[p[3]] = (n[p[3]] || 0) + 1; });
+    var chiusi = n.riuscito + n.riuscito_altra_ruota + n.non_riuscito;
+    n.tot = lista.length; n.tasso = chiusi ? Math.round(100 * (n.riuscito + n.riuscito_altra_ruota) / chiusi) + "%" : "—";
+    return n;
+  }
+  function tabella(titolo, gruppi, primi){
+    var righe = Object.keys(gruppi).map(function(k){ return [k, conta(gruppi[k])]; })
+      .sort(function(a, b){ return b[1].tot - a[1].tot; }).slice(0, primi || 1000);
+    return '<h3>' + titolo + '</h3><div class="tabwrap"><table><tr><th></th><th class="num">Preventivi</th><th class="num">Riusciti</th><th class="num">Altra ruota</th><th class="num">Non riusciti</th><th class="num" title="in corso + da abbinare">Aperti</th><th class="num">Tasso</th></tr>' +
+      righe.map(function(r){ var n = r[1];
+        return '<tr><td>' + esc(r[0]) + '</td><td class="num">' + n.tot + '</td><td class="num">' + n.riuscito + '</td><td class="num">' + n.riuscito_altra_ruota +
+               '</td><td class="num">' + n.non_riuscito + '</td><td class="num">' + (n.in_corso + n.da_abbinare) + '</td><td class="num"><b>' + n.tasso + '</b></td></tr>';
+      }).join("") + '</table></div>';
+  }
+  function per(chiave){ var g = {}; P.forEach(function(p){ chiave(p).forEach(function(k){ if(k) (g[k] = g[k] || []).push(p); }); }); return g; }
+  var tutti = conta(P);
+  var h = '<div class="kpi">' +
+    '<div><b>' + tutti.tot + '</b><span>preventivi</span></div>' +
+    '<div><b>' + tutti.tasso + '</b><span>riusciti sui chiusi</span></div>' +
+    '<div><b>' + tutti.riuscito + ' + ' + tutti.riuscito_altra_ruota + '</b><span>riusciti + altra ruota</span></div>' +
+    '<div><b>' + tutti.non_riuscito + '</b><span>non riusciti</span></div>' +
+    '<div><b>' + tutti.in_corso + '</b><span>in corso</span></div>' +
+    '<div><b>' + tutti.da_abbinare + '</b><span>da abbinare</span></div></div>';
+  h += tabella("Per mese", per(function(p){ return [p[1].slice(0, 7)]; }));
+  h += tabella("Per cliente (i primi 30)", per(function(p){ return [p[0] >= 0 ? CLI[p[0]].nome : ""]; }), 30);
+  h += tabella("Per modello di ruota", per(function(p){ return p[4].map(function(a){ return a[0]; }).filter(function(v, i, x){ return x.indexOf(v) === i; }); }), 40);
+  h += tabella("Per diametro", per(function(p){ return p[4].map(function(a){ var m = /^(\d{2})x/.exec(a[2]); return m ? m[1] + '"' : ""; }).filter(function(v, i, x){ return x.indexOf(v) === i; }); }));
+  var da = P.filter(function(p){ return p[0] < 0; });
+  if(da.length) h += '<h3>Da abbinare (' + da.length + ')</h3><p class="muted small">Preventivi senza cliente o con un nome non in elenco: per abbinarli chiedi a Claude.</p>' +
+    '<div class="tabwrap"><table><tr><th>Data</th><th>Nome scritto</th><th>Vettura</th><th>Ruote</th></tr>' +
+    da.map(function(p){ return '<tr><td>' + dataIt(p[1]) + '</td><td>' + esc(p[5] || "—") + '</td><td class="small">' + esc(p[2]) + '</td><td class="small">' + esc(ruoteProposte(p)) + '</td></tr>'; }).join("") + '</table></div>';
+  $("p-corpo").innerHTML = h;
 }
 /* telefonate registrate con Plaud: [cliente, data e ora, durata s, titolo, id Plaud, [[sezione, testo], ...]] */
 function schedaTelefonate(c){
@@ -398,7 +467,7 @@ function apriCliente(i){
   if(!c.ordini.length){   /* cliente con telefonate ma senza ordini B2B nel periodo */
     $("scheda").innerHTML = '<div class="card"><h2 style="margin-top:0">' + esc(c.nome) + '</h2>' +
       '<p class="muted small">Cod. ' + esc(c.cod) + ' · ' + esc(c.citta) + ' ' + esc(c.prov) + '</p>' +
-      '<p class="muted">Nessun ordine B2B dal ' + dataIt(D.meta.dal) + '.</p></div>' + schedaTelefonate(c);
+      '<p class="muted">Nessun ordine B2B dal ' + dataIt(D.meta.dal) + '.</p></div>' + schedaPreventivi(c) + schedaTelefonate(c);
     window.scrollTo(0, 0); return;
   }
   var h = '<div class="card"><h2 style="margin-top:0">' + esc(c.nome) +
@@ -430,7 +499,7 @@ function apriCliente(i){
              '</td><td class="num">' + eur0(x[3]) + '</td><td class="num">' + eur0(x[1] + x[3]) + '</td></tr>';
     }).join("") + '</table></div>' +
     '<h3>Per mese</h3><div class="leg">' + legenda() + '</div>' + grafico2(serieMesi(function(k){ return c.mesi[k]; }), 170) +
-    '</div>' + schedaTelefonate(c) + '<div class="card"><h3 style="margin-top:0">Storico ordini</h3>';
+    '</div>' + schedaPreventivi(c) + schedaTelefonate(c) + '<div class="card"><h3 style="margin-top:0">Storico ordini</h3>';
   var annoCorr = "";
   h += c.ordini.map(function(o){
     var sintesi = o[8].map(function(r){ return qta(r[3]) + "× " + r[1]; }).join(" · ");
@@ -693,6 +762,7 @@ function mostraSezione(v){
   var s = document.querySelectorAll(".sez");
   for(var i = 0; i < s.length; i++) s[i].classList.toggle("on", s[i].id === "s-" + v);
   if(v === "mappa") mappa();   /* creata alla prima apertura: Leaflet non misura un elemento nascosto */
+  if(v === "preventivi") sezionePreventivi();
 }
 function avvia(){
   prepara();

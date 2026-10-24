@@ -89,17 +89,18 @@ def dataset(dal=PAGINA_DAL):
                        r["spedizione"] or 0, 0 if om else (r["imponibile"] or 0), righe.get(r["id"], []),
                        1 if om else 0])
     tel = telefonate(clienti, icli)
+    prev = preventivi(con, clienti, icli)
     per = con.execute("SELECT MIN(data_ora) a, MAX(data_ora) b FROM ordini WHERE data_ora >= ?", (dal,)).fetchone()
     meta = {
         "build": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "dal": (per["a"] or "")[:10], "al": (per["b"] or "")[:10],
-        "ordini": len(ordini), "clienti": len(clienti), "telefonate": len(tel),
+        "ordini": len(ordini), "clienti": len(clienti), "telefonate": len(tel), "preventivi": len(prev),
     }
     sens, senza = sensori(con, icli, meta["al"], dal)
     meta["sens"] = {m: sum(1 for s in sens if s[3] == m) for m in "AMX"}
     meta["sens"]["senza_coord"] = senza
     # formato posizionale (array) per tenere piccolo il file: le chiavi sono in index.template.html
-    return {"meta": meta, "cat": cat, "clienti": clienti, "ordini": ordini, "tel": tel, "sens": sens}
+    return {"meta": meta, "cat": cat, "clienti": clienti, "ordini": ordini, "tel": tel, "sens": sens, "prev": prev}
 
 
 def marca(descrizione):
@@ -194,6 +195,32 @@ def telefonate(clienti, icli):
                     r["id"][3:] if r["id"].startswith("of_") else r["id"],
                     [[t, sez[k]] for k, t in TITOLI_SCHEDA if sez.get(k)]])
     tc.close()
+    return out
+
+
+# Preventivi della webapp mak-preventivi (tabelle preventivi e preventivi_articoli, vedi data/preventivi.py).
+def preventivi(con, clienti, icli):
+    """[indice cliente o -1 se da abbinare, data e ora, vettura, esito, [[modello, finitura, misure, netto], …],
+    nome scritto nella webapp, data dell'ordine che ha dato l'esito]. Dal più recente.
+    Aggiunge a `clienti` quelli che hanno preventivi ma nessun ordine dal PAGINA_DAL."""
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='preventivi'").fetchone():
+        return []
+    articoli = {}
+    for r in con.execute("SELECT preventivo_id, modello, finitura, misure, netto FROM preventivi_articoli"
+                         " ORDER BY preventivo_id, n"):
+        articoli.setdefault(r["preventivo_id"], []).append(
+            [r["modello"] or "", r["finitura"] or "", r["misure"] or "", r["netto"] or 0])
+    out = []
+    for r in con.execute("SELECT * FROM preventivi ORDER BY data_ora DESC"):
+        cod = r["cliente_codice"] or ""
+        if cod and cod not in icli:
+            a = con.execute("SELECT ragione_sociale, citta, provincia FROM clienti WHERE codice=?", (cod,)).fetchone()
+            icli[cod] = len(clienti)
+            clienti.append([cod, (a["ragione_sociale"] if a else r["cliente_nome"]) or cod,
+                            (a["citta"] if a else "") or "", (a["provincia"] if a else "") or "", "", 1, "", ""])
+        out.append([icli[cod] if cod else -1, (r["data_ora"] or "")[:16].replace("T", " "), r["vettura"] or "",
+                    r["esito"] or "in_corso", articoli.get(r["id"], []), r["cliente_nome"] or "",
+                    (r["esito_data"] or "")[:10]])
     return out
 
 

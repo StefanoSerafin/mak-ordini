@@ -70,3 +70,41 @@ CREATE INDEX IF NOT EXISTS ix_ordini_data    ON ordini(data_ora);
 CREATE INDEX IF NOT EXISTS ix_righe_ordine   ON righe(ordine_id);
 CREATE INDEX IF NOT EXISTS ix_righe_articolo ON righe(cod_articolo);
 CREATE INDEX IF NOT EXISTS ix_righe_cat      ON righe(categoria);
+
+-- Preventivi fatti con la webapp mak-preventivi (dal 2026-10-24): arrivano dall'archivio privato
+-- Mak/mak-preventivi-dati con data/preventivi.py importa; l'esito lo calcola data/preventivi.py esiti.
+CREATE TABLE IF NOT EXISTS preventivi (
+    id             TEXT PRIMARY KEY,       -- AAAAMMGG-hhmmss-xxxx, dato dalla webapp
+    data_ora       TEXT,                   -- ISO, ora italiana
+    cliente_codice TEXT,                   -- 6 cifre; vuoto = da abbinare
+    cliente_nome   TEXT,                   -- come scelto o scritto nella webapp
+    abbinato       TEXT,                   -- app | nome | manuale | '' (come si è arrivati al codice)
+    vettura        TEXT,                   -- testo leggibile (marca modello anno)
+    vettura_json   TEXT,                   -- dettaglio della vettura com'era nella webapp
+    diametri       TEXT,                   -- diametri delle ruote proposte, es. "16,17"
+    listino        TEXT,
+    tpms           TEXT,                   -- JSON del TPMS scelto, o vuoto
+    esito          TEXT,                   -- riuscito | riuscito_altra_ruota | non_riuscito | in_corso | da_abbinare
+    esito_ordine   TEXT,                   -- id dell'ordine che ha dato l'esito
+    esito_data     TEXT,
+    importato      TEXT                    -- quando è stato caricato/aggiornato
+);
+
+CREATE TABLE IF NOT EXISTS preventivi_articoli (
+    preventivo_id    TEXT NOT NULL REFERENCES preventivi(id),
+    n                INTEGER,
+    codice_articolo  TEXT,                 -- codice dell'ordine B2B (per l'acciaio F…, non R1-…)
+    code             TEXT,                 -- codice mostrato nella webapp (per l'acciaio R1-…)
+    tipo             TEXT,                 -- lega | acciaio | ruotino | accessorio
+    modello          TEXT,
+    finitura         TEXT,
+    misure           TEXT,
+    diametro         TEXT,
+    netto            REAL,
+    listino_pubblico REAL,
+    accessori        REAL
+);
+
+CREATE INDEX IF NOT EXISTS ix_prev_cliente  ON preventivi(cliente_codice);
+CREATE INDEX IF NOT EXISTS ix_prev_art      ON preventivi_articoli(preventivo_id);
+CREATE INDEX IF NOT EXISTS ix_prev_articolo ON preventivi_articoli(codice_articolo);
