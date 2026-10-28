@@ -130,6 +130,20 @@ class TestCaricaExport(unittest.TestCase):
         self.assertEqual(self.con.execute("SELECT COUNT(*) FROM righe WHERE ordine_id='I_104'").fetchone()[0], 1)
         self.assertEqual(self.con.execute("SELECT COUNT(*) FROM gestionale_righe").fetchone()[0], 3)
 
+    def test_subentri(self):
+        orig = carica_db.subentri
+        carica_db.subentri = lambda: {"000111": {"nuovo": "000777", "nota": "ex prova"}}
+        try:
+            CE.carica_ordini(self.con, self.f_or)
+            self.assertEqual(carica_db.applica_subentri(self.con), 1)
+            self.assertEqual(self.con.execute("SELECT COUNT(*) FROM ordini WHERE codice_cliente='000111'").fetchone()[0], 0)
+            self.assertGreater(self.con.execute("SELECT COUNT(*) FROM ordini WHERE codice_cliente='000777'").fetchone()[0], 0)
+            self.assertIsNone(self.con.execute("SELECT 1 FROM clienti WHERE codice='000111'").fetchone())
+            self.assertIsNotNone(self.con.execute("SELECT 1 FROM clienti WHERE codice='000777'").fetchone())
+            self.assertEqual(carica_db.applica_subentri(self.con), 0)   # gia' applicato: niente da fare
+        finally:
+            carica_db.subentri = orig
+
     def test_anagrafica_senza_segreti(self):
         CE.carica_anagrafica(self.con, self.f_cli)
         a = self.con.execute("SELECT * FROM anagrafica_b2b WHERE codice='000111'").fetchone()

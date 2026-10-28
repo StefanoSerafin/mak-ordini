@@ -78,6 +78,44 @@ def gestionale_presente(con):
         return set()
 
 
+SUBENTRI = os.path.join(QUI, "subentri.json")
+
+
+def subentri():
+    """{vecchio codice: {"nuovo": codice, "nota": testo}} da data/subentri.json (fuori da git)."""
+    try:
+        with open(SUBENTRI, encoding="utf-8") as f:
+            return {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+    except (OSError, ValueError):
+        return {}
+
+
+def applica_subentri(con):
+    """Cambi di ragione sociale con codice nuovo: ordini, righe del gestionale e preventivi del vecchio codice
+    passano al nuovo; il vecchio cliente sparisce. Si riapplica a ogni giro (l'export riporta il codice vecchio)."""
+    n = 0
+    with con:
+        for vecchio, s in subentri().items():
+            nuovo = s["nuovo"]
+            if not con.execute("SELECT 1 FROM ordini WHERE codice_cliente=? UNION SELECT 1 FROM clienti WHERE codice=?",
+                               (vecchio, vecchio)).fetchone():
+                continue
+            if not con.execute("SELECT 1 FROM clienti WHERE codice=?", (nuovo,)).fetchone():
+                con.execute("UPDATE clienti SET codice=? WHERE codice=?", (nuovo, vecchio))
+            con.execute("UPDATE ordini SET codice_cliente=? WHERE codice_cliente=?", (nuovo, vecchio))
+            for tab, col in (("gestionale_righe", "cod_cliente"), ("preventivi", "cliente_codice")):
+                try:
+                    con.execute(f"UPDATE {tab} SET {col}=? WHERE {col}=?", (nuovo, vecchio))
+                except sqlite3.OperationalError:
+                    pass
+            con.execute("DELETE FROM clienti WHERE codice=?", (vecchio,))
+            con.execute("UPDATE clienti SET primo_ordine=(SELECT MIN(data_ora) FROM ordini WHERE codice_cliente=?"
+                        " AND COALESCE(annullato,0)=0), ultimo_ordine=(SELECT MAX(data_ora) FROM ordini"
+                        " WHERE codice_cliente=? AND COALESCE(annullato,0)=0) WHERE codice=?", (nuovo, nuovo, nuovo))
+            n += 1
+    return n
+
+
 def carica_regole():
     with open(os.path.join(QUI, "categorie.json"), encoding="utf-8") as f:
         c = json.load(f)

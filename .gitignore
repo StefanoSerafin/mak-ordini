@@ -6,3 +6,4 @@ data/log/
 data/*.db
 data/*.db-journal
 data/*.plain.json
+data/subentri.json

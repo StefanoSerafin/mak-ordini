@@ -59,6 +59,10 @@ Ogni lunedì `Mak/mak-export-b2b/scarica.py` scarica dal B2B due Excel del gesti
 
 Primo caricamento (2026-10-28): 6.465 ordini abbinati, 111 entrati dal gestionale, 232 con importo diverso, 103 annullati. Dopo il caricamento il totale 2025 coincide con l'export al centesimo. Copia del DB prima del caricamento: `data/log/ordini-backup-2026-10-28-prima-export.db`.
 
+## Cambi di ragione sociale (subentri, dal 2026-10-28)
+
+Quando un cliente cambia ragione sociale e prende un codice nuovo, la coppia vecchio → nuovo va in `data/subentri.json` (fuori da git: contiene nomi di clienti). `carica_db.applica_subentri()` sposta sul codice nuovo ordini, righe del gestionale e preventivi del vecchio, e cancella il cliente vecchio. Si riapplica a ogni giro (`aggiorna.py`, `carica_export.py`), perché export e notifiche continuano a riportare il codice vecchio per gli ordini passati. Lo stesso file lo legge `Mak/scadenze-ts900`.
+
 ## Telefonate nella scheda cliente (dal 2026-10-16)
 
 La scheda cliente ha una sezione **Telefonate**: le telefonate registrate con Plaud e abbinate al cliente (archivio `Mak/Plaud Note Pro/callrec.db`, letto in sola lettura). Per ognuna c'è la scheda completa del template «Chiamata cliente MAK» (richiesta, domande e risposte, dati tecnici, prodotti e prezzi, obiezioni, cosa devo fare, esito, nota personale, occasioni) e il link per aprirla in Plaud. Compaiono anche i clienti con telefonate ma senza ordini B2B nel periodo; la ricerca mostra quante telefonate ha ogni cliente. Le telefonate non ancora abbinate a un cliente non ci sono: si abbinano con `abbina.py` nel progetto Plaud.

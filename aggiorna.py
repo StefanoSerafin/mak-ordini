@@ -47,6 +47,7 @@ def main():
         carica_export.carica(con)
     except Exception as err:
         print(f"Export del gestionale non caricato: {err}")
+    carica_db.applica_subentri(con)   # ordini nuovi dalle email con il codice vecchio
     r = carica_db.report(con)
 
     if not a.no_build:

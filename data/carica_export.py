@@ -218,6 +218,7 @@ def carica(con=None, verbose=True):
         stat.update(carica_ordini(con))
     if os.path.exists(FILE_CLI):
         stat.update(carica_anagrafica(con))
+    stat["subentri"] = carica_db.applica_subentri(con)
     if verbose and stat:
         stampa(con, stat)
     return stat
