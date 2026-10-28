@@ -59,8 +59,9 @@ def dataset(dal=PAGINA_DAL):
     con.row_factory = sqlite3.Row
     cat = [r["categoria"] for r in con.execute(
         "SELECT r.categoria, SUM(r.importo) s FROM righe r JOIN ordini o ON o.id=r.ordine_id"
-        " WHERE o.data_ora >= ? GROUP BY r.categoria ORDER BY s DESC", (dal,))]
+        " WHERE o.data_ora >= ? AND COALESCE(o.annullato,0)=0 GROUP BY r.categoria ORDER BY s DESC", (dal,))]
     icat = {c: i for i, c in enumerate(cat)}
+    anag = anagrafica(con)
     clienti, icli = [], {}
     for r in con.execute("SELECT codice, ragione_sociale, citta, provincia, flag_cliente, in_anagrafica,"
                          " network, tipo"
@@ -69,8 +70,25 @@ def dataset(dal=PAGINA_DAL):
         icli[r["codice"]] = len(clienti)
         clienti.append([r["codice"], r["ragione_sociale"], r["citta"] or "", r["provincia"] or "",
                         r["flag_cliente"] or "", r["in_anagrafica"] or 0,
-                        r["network"] or "", r["tipo"] or ""])
+                        r["network"] or "", r["tipo"] or "", anag.get(r["codice"], 0)])
     righe = {}
+
+    def icat_di(c):
+        if c not in icat:
+            icat[c] = len(cat)
+            cat.append(c)
+        return icat[c]
+    vett, righe_gest = {}, {}
+    if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gestionale_righe'").fetchone():
+        for g in con.execute("SELECT ordine_id, cod_articolo, descrizione, qta_ord, imp_ord, categoria,"
+                             " auto_marca, auto_modello FROM gestionale_righe WHERE dt_ord >= ?", (dal[:10],)):
+            v = " ".join(x for x in (g["auto_marca"], g["auto_modello"]) if x)
+            if v:
+                vett.setdefault((g["ordine_id"], g["cod_articolo"]), v)
+            q = g["qta_ord"] or 0
+            righe_gest.setdefault(g["ordine_id"], []).append([
+                g["cod_articolo"], g["descrizione"], v, q, round((g["imp_ord"] or 0) / q, 2) if q else 0, "",
+                g["imp_ord"] or 0, icat_di(g["categoria"]), ""])
     # omaggi: restano visibili (articoli e pezzi) ma valgono 0, per non gonfiare i totali
     omaggi = {r["id"] for r in con.execute("SELECT id FROM ordini WHERE omaggio=1")}
     for r in con.execute("SELECT ordine_id, cod_articolo, descrizione, applicazione, qta, prezzo, sconto,"
@@ -78,16 +96,31 @@ def dataset(dal=PAGINA_DAL):
                          " (SELECT id FROM ordini WHERE data_ora >= ?) ORDER BY ordine_id, n_riga", (dal,)):
         om = r["ordine_id"] in omaggi
         righe.setdefault(r["ordine_id"], []).append([
-            r["cod_articolo"], r["descrizione"], r["applicazione"] or "", r["qta"], 0 if om else r["prezzo"],
-            r["sconto"] or "", 0 if om else r["importo"], icat[r["categoria"]], r["coupon"] or ""])
-    ordini = []
+            r["cod_articolo"], r["descrizione"], r["applicazione"] or vett.get((r["ordine_id"], r["cod_articolo"]), ""),
+            r["qta"], 0 if om else r["prezzo"],
+            r["sconto"] or "", 0 if om else r["importo"], icat_di(r["categoria"]), r["coupon"] or ""])
+    ordini, annullati = [], []
     for r in con.execute("SELECT id, codice_cliente, data_ora, inserito_da, kit_completo, merce_righe,"
-                         " spedizione, imponibile FROM ordini WHERE data_ora >= ? ORDER BY data_ora DESC", (dal,)):
+                         " spedizione, imponibile, merce_gestionale, fonte, annullato FROM ordini"
+                         " WHERE data_ora >= ? ORDER BY data_ora DESC", (dal,)):
         om = r["id"] in omaggi
+        if r["annullato"]:
+            # notificato per email ma assente dal gestionale: in pagina solo nella scheda cliente, a 0
+            annullati.append([r["id"], icli[r["codice_cliente"]], (r["data_ora"] or "")[:16], r["merce_righe"] or 0,
+                              righe.get(r["id"], [])])
+            continue
+        merce = r["merce_righe"] if r["merce_gestionale"] is None else r["merce_gestionale"]
+        rr = righe.get(r["id"], [])
+        flag = ""
+        if r["fonte"] == "gestionale":
+            flag = "g"                   # solo nel gestionale: nessuna email (sede, email mancante)
+        elif r["merce_gestionale"] is not None and abs(r["merce_gestionale"] - (r["merce_righe"] or 0)) > 0.5:
+            flag = "m"                   # modificato dopo l'invio: righe e importi del gestionale
+            rr = righe_gest.get(r["id"], rr)
         ordini.append([r["id"], icli[r["codice_cliente"]], (r["data_ora"] or "")[:16],
-                       UTENTE.get(r["inserito_da"], "x"), r["kit_completo"] or 0, 0 if om else r["merce_righe"],
-                       r["spedizione"] or 0, 0 if om else (r["imponibile"] or 0), righe.get(r["id"], []),
-                       1 if om else 0])
+                       UTENTE.get(r["inserito_da"], "x"), r["kit_completo"] or 0, 0 if om else merce,
+                       r["spedizione"] or 0, 0 if om else (r["imponibile"] or 0), [x[:6] + [0 if om else x[6]] + x[7:] for x in rr],
+                       1 if om else 0, flag])
     tel = telefonate(clienti, icli)
     prev = preventivi(con, clienti, icli)
     per = con.execute("SELECT MIN(data_ora) a, MAX(data_ora) b FROM ordini WHERE data_ora >= ?", (dal,)).fetchone()
@@ -100,7 +133,51 @@ def dataset(dal=PAGINA_DAL):
     meta["sens"] = {m: sum(1 for s in sens if s[3] == m) for m in "AMX"}
     meta["sens"]["senza_coord"] = senza
     # formato posizionale (array) per tenere piccolo il file: le chiavi sono in index.template.html
-    return {"meta": meta, "cat": cat, "clienti": clienti, "ordini": ordini, "tel": tel, "sens": sens, "prev": prev}
+    meta["annullati"] = len(annullati)
+    ap = aperti(con, icli, dal)
+    meta["aperti"] = len(ap)
+    meta["gestionale"] = gestionale_al(con)
+    return {"meta": meta, "cat": cat, "clienti": clienti, "ordini": ordini, "tel": tel, "sens": sens, "prev": prev,
+            "ann": annullati, "aperti": ap}
+
+
+def anagrafica(con):
+    """{codice: [listino, pagamento, ultimo accesso B2B, tool TPMS, WhatsApp, fatturato anno prec., fatturato
+    anno corr., priorita', B2B attivo, ultimo acquisto TPMS universali, campagna]} dall'anagrafica del gestionale.
+    Solo colonne commerciali: niente credenziali, telefoni, email, indirizzi."""
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='anagrafica_b2b'").fetchone():
+        return {}
+    out = {}
+    for a in con.execute("SELECT * FROM anagrafica_b2b"):
+        tool = " · ".join(x for x in (a["tool_autel"], a["tool_ateq"], a["tool_orange"]) if x) or (a["tool_tpms"] or "")
+        out[a["codice"]] = [a["listino"] or "", a["pagamento"] or "", a["b2b_ultimo"] or "", tool, a["whatsapp"] or "",
+                            a["fatt_prec"] or 0, a["fatt_corr"] or 0, a["priorita"] or "", a["b2b"] or 0,
+                            a["ult_acq_tpms"] or "", a["campagna"] or ""]
+    return out
+
+
+def aperti(con, icli, dal=PAGINA_DAL):
+    """Merce ordinata e non ancora spedita, dall'ultimo export del gestionale:
+    [indice cliente, id ordine, data ordine, codice, descrizione, qta residua, importo residuo, consegna, vettura]."""
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gestionale_righe'").fetchone():
+        return []
+    out = []
+    for g in con.execute("SELECT * FROM gestionale_righe WHERE qta_res > 0 AND dt_ord >= ? ORDER BY dt_ord DESC",
+                         (dal[:10],)):
+        if g["cod_cliente"] not in icli:
+            continue
+        out.append([icli[g["cod_cliente"]], g["ordine_id"], g["dt_ord"], g["cod_articolo"], g["descrizione"],
+                    g["qta_res"], g["imp_res"] or 0, g["dt_cons"] or "",
+                    " ".join(x for x in (g["auto_marca"], g["auto_modello"]) if x)])
+    return out
+
+
+def gestionale_al(con):
+    """Ultimo giorno dell'export ordini caricato, '' se non c'e'."""
+    try:
+        return con.execute("SELECT MAX(dt_ord) FROM gestionale_righe").fetchone()[0] or ""
+    except sqlite3.OperationalError:
+        return ""
 
 
 def marca(descrizione):
@@ -119,7 +196,7 @@ def _righe_sensori(con, dal=PAGINA_DAL):
     """{codice: {id_ordine: [data, {marca: pezzi}]}} per le righe sensore dal `dal`."""
     out = {}
     for r in con.execute("SELECT o.codice_cliente, o.id, o.data_ora, r.descrizione, r.qta FROM righe r"
-                         " JOIN ordini o ON o.id=r.ordine_id WHERE r.categoria=? AND o.data_ora >= ?",
+                         " JOIN ordini o ON o.id=r.ordine_id WHERE r.categoria=? AND o.data_ora >= ? AND COALESCE(o.annullato,0)=0",
                          (CAT_SENSORI, dal)):
         m = marca(r[3])
         if m:

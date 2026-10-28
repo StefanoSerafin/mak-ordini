@@ -115,6 +115,7 @@ label.chk input{width:20px;height:20px}
     <input type="radio" name="sez" id="n-confronto" value="confronto"><label for="n-confronto">Confronto</label>
     <input type="radio" name="sez" id="n-riepilogo" value="riepilogo"><label for="n-riepilogo">Riepilogo</label>
     <input type="radio" name="sez" id="n-fermi" value="fermi"><label for="n-fermi">Fermi</label>
+    <input type="radio" name="sez" id="n-aperti" value="aperti"><label for="n-aperti">Aperti</label>
     <input type="radio" name="sez" id="n-prodotti" value="prodotti"><label for="n-prodotti">Prodotti</label>
     <input type="radio" name="sez" id="n-andamento" value="andamento"><label for="n-andamento">Andamento</label>
     <input type="radio" name="sez" id="n-mappa" value="mappa"><label for="n-mappa">Mappa</label>
@@ -196,6 +197,12 @@ label.chk input{width:20px;height:20px}
     </div>
     <p class="muted small" id="f-tot"></p>
     <div class="tabwrap"><table id="f-tab"></table></div>
+  </section>
+
+  <section class="sez" id="s-aperti">
+    <h2>Ordini aperti</h2>
+    <p class="muted small" id="a-nota"></p>
+    <div id="a-corpo"></div>
   </section>
 
   <section class="sez" id="s-prodotti">
@@ -303,7 +310,7 @@ function prepara(){
   ANNO = D.meta.al.slice(0,4); PREC = String(+ANNO - 1); TAGLIO = D.meta.al.slice(5,10);
   CLI = D.clienti.map(function(c, i){
     return {i:i, cod:c[0], nome:c[1], citta:c[2], prov:c[3], flag:c[4], anag:c[5], net:c[6] || "", tipo:c[7] || "",
-            ordini:[], tel:[], prev:[], n:0, merce:0, cat:{}, primoA:null, ultimoA:null, ultimo:null, mesi:{},
+            g:c[8] || null, ann:[], ordini:[], tel:[], prev:[], n:0, merce:0, cat:{}, primoA:null, ultimoA:null, ultimo:null, mesi:{},
             /* anno precedente: pp = a parita' di periodo (fino al giorno TAGLIO), q4 = dopo */
             p:{n:0, merce:0, cat:{}, npp:0, pp:0, ppcat:{}, nq4:0, q4:0, q4cat:{}, ultimo:null}};
   });
@@ -326,6 +333,7 @@ function prepara(){
   });
   (D.tel || []).forEach(function(t){ CLI[t[0]].tel.push(t); });   // gia' ordinate dalla piu' recente
   (D.prev || []).forEach(function(p){ if(p[0] >= 0) CLI[p[0]].prev.push(p); });   // idem
+  (D.ann || []).forEach(function(a){ CLI[a[1]].ann.push(a); });
   CLI.forEach(function(c){
     c.fermo = giorniDa(c.ultimo);
     c.freq = c.n > 1 ? Math.round((new Date(c.ultimoA.slice(0,10)) - new Date(c.primoA.slice(0,10))) / 86400000 / (c.n - 1)) : null;
@@ -460,6 +468,51 @@ function schedaTelefonate(c){
         '</details>';
     }).join("") + '</div>';
 }
+function schedaGestionale(c){
+  var g = c.g; if(!g) return "";
+  var acc = g[2] ? dataIt(g[2]) + ' (' + giorniDa(g[2]) + ' gg fa)' : (g[8] ? 'mai' : 'B2B non attivo');
+  return '<h3>Dal gestionale</h3><div class="kpi">' +
+      '<div><b>' + eur0(g[5]) + '</b><span>fatturato ' + PREC + '</span></div>' +
+      '<div><b>' + eur0(g[6]) + '</b><span>fatturato ' + ANNO + '</span></div>' +
+      '<div><b>' + esc(acc) + '</b><span>ultimo accesso B2B</span></div>' +
+      '<div><b>' + (g[9] ? dataIt(g[9]) : '—') + '</b><span>ultimi sensori TPMS universali</span></div>' +
+    '</div><p class="small muted" style="margin:8px 0 0">' +
+      [g[0] && 'Listino ' + esc(g[0]), g[10] && 'campagna ' + esc(g[10]), g[1] && esc(g[1]), g[3] && 'tool TPMS: ' + esc(g[3]),
+       g[4] && 'WhatsApp ' + esc(g[4]), g[7] && esc(g[7])].filter(Boolean).join(' · ') +
+    '<br>Il fatturato del gestionale comprende resi e note di credito; gli importi sopra e sotto sono l\'ordinato.</p>';
+}
+function schedaAperti(c){
+  var l = (D.aperti || []).filter(function(a){ return a[0] === c.i; });
+  if(!l.length) return "";
+  return '<div class="card"><h3 style="margin-top:0">Da spedire</h3>' + l.map(function(a){
+    return '<div class="riga"><div><b>' + esc(a[4]) + '</b></div><div class="c">' + esc(a[3]) + ' · ordine del ' + dataIt(a[2]) +
+      (a[7] ? ' · consegna prevista ' + dataIt(a[7]) : '') + (a[8] ? ' · ' + esc(a[8]) : '') + '</div><div>' + qta(a[5]) + ' pz · ' + eur(a[6]) + '</div></div>';
+  }).join("") + '</div>';
+}
+function schedaAnnullati(c){
+  if(!c.ann.length) return "";
+  return '<div class="card"><h3 style="margin-top:0">Ordini annullati <span class="badge">' + c.ann.length + '</span></h3>' +
+    '<p class="small muted">Arrivati per email ma assenti dal gestionale: non contano nei totali.</p>' + c.ann.map(function(a){
+      return '<details class="ord"><summary><span class="d">' + dataIt(a[2]) + '</span><span class="t">' +
+        esc(a[4].map(function(r){ return qta(r[3]) + "× " + r[1]; }).join(" · ")) + '</span><span class="num"><s>' + eur(a[3]) + '</s></span></summary>' +
+        '<p class="small muted" style="margin:0 0 8px 4px">' + esc(a[0]) + '<span class="badge">annullato</span></p></details>';
+    }).join("") + '</div>';
+}
+function sezioneAperti(){
+  var l = D.aperti || [];
+  $("a-nota").textContent = "Merce ordinata e non ancora spedita secondo l'export del gestionale del " + dataIt(D.meta.gestionale) +
+    ". Si aggiorna il lunedì.";
+  if(!l.length){ $("a-corpo").innerHTML = '<p class="muted">Nessuna riga da spedire.</p>'; return; }
+  var per = {}; l.forEach(function(a){ (per[a[0]] = per[a[0]] || []).push(a); });
+  var tot = l.reduce(function(s, a){ return s + a[6]; }, 0);
+  $("a-corpo").innerHTML = '<p class="small">' + l.length + ' righe · ' + Object.keys(per).length + ' clienti · ' + eur(tot) + '</p>' +
+    tab(["Cliente", "Ordine", "Articolo", "Pz", "Importo", "Consegna"], l.map(function(a){
+      var c = CLI[a[0]];
+      return '<tr class="tap" data-cli="' + c.i + '"><td><b>' + esc(c.nome) + '</b><br><span class="muted small">' + esc(c.citta) + '</span></td>' +
+        '<td class="num">' + dataIt(a[2]) + '</td><td class="num" style="white-space:normal;text-align:left">' + esc(a[4]) + (a[8] ? '<br><span class="muted small">' + esc(a[8]) + '</span>' : '') + '</td>' +
+        '<td class="num">' + qta(a[5]) + '</td><td class="num">' + eur(a[6]) + '</td><td class="num">' + dataIt(a[7]) + '</td></tr>';
+    }));
+}
 function apriCliente(i){
   var c = CLI[i];
   $("n-cliente").checked = true; mostraSezione("cliente");
@@ -467,13 +520,13 @@ function apriCliente(i){
   if(!c.ordini.length){   /* cliente con telefonate ma senza ordini B2B nel periodo */
     $("scheda").innerHTML = '<div class="card"><h2 style="margin-top:0">' + esc(c.nome) + '</h2>' +
       '<p class="muted small">Cod. ' + esc(c.cod) + ' · ' + esc(c.citta) + ' ' + esc(c.prov) + '</p>' +
-      '<p class="muted">Nessun ordine B2B dal ' + dataIt(D.meta.dal) + '.</p></div>' + schedaPreventivi(c) + schedaTelefonate(c);
+      '<p class="muted">Nessun ordine B2B dal ' + dataIt(D.meta.dal) + '.</p>' + schedaGestionale(c) + '</div>' + schedaAnnullati(c) + schedaPreventivi(c) + schedaTelefonate(c);
     window.scrollTo(0, 0); return;
   }
   var h = '<div class="card"><h2 style="margin-top:0">' + esc(c.nome) +
     (c.flag ? '<span class="badge" title="Sigla accanto all\'indirizzo nel PDF ordine">' + esc(c.flag) + '</span>' : '') + '</h2>' +
     '<p class="muted small">Cod. ' + esc(c.cod) + ' · ' + esc(c.citta) + ' ' + esc(c.prov) + (c.tipo ? ' · ' + esc(c.tipo) : '') + (c.net ? ' · network ' + esc(c.net) : '') +
-      (c.anag ? '' : ' · non in anagrafica MAK 2026') + '</p>' +
+      (c.anag ? '' : ' · non nell\'anagrafica del gestionale') + '</p>' + schedaGestionale(c) +
     '<div class="kpi">' +
       '<div><b>' + c.n + '</b><span>ordini ' + ANNO + '</span></div>' +
       '<div><b>' + eur0(c.merce) + '</b><span>merce ' + ANNO + ' (IVA escl.)</span></div>' +
@@ -499,7 +552,7 @@ function apriCliente(i){
              '</td><td class="num">' + eur0(x[3]) + '</td><td class="num">' + eur0(x[1] + x[3]) + '</td></tr>';
     }).join("") + '</table></div>' +
     '<h3>Per mese</h3><div class="leg">' + legenda() + '</div>' + grafico2(serieMesi(function(k){ return c.mesi[k]; }), 170) +
-    '</div>' + schedaPreventivi(c) + schedaTelefonate(c) + '<div class="card"><h3 style="margin-top:0">Storico ordini</h3>';
+    '</div>' + schedaAperti(c) + schedaAnnullati(c) + schedaPreventivi(c) + schedaTelefonate(c) + '<div class="card"><h3 style="margin-top:0">Storico ordini</h3>';
   var annoCorr = "";
   h += c.ordini.map(function(o){
     var sintesi = o[8].map(function(r){ return qta(r[3]) + "× " + r[1]; }).join(" · ");
@@ -509,6 +562,8 @@ function apriCliente(i){
       '<p class="small muted" style="margin:0 0 8px 4px">' + esc(o[0]) + ' · ore ' + esc(o[2].slice(11)) +
         (o[3] === "a" ? '<span class="badge a">inserito da te</span>' : (o[3] === "c" ? '<span class="badge">inserito dal cliente</span>' : '<span class="badge">inserito dalla sede</span>')) +
         (o[9] ? '<span class="badge">omaggio</span>' : '') +
+        (o[10] === "g" ? '<span class="badge" title="Nel gestionale ma senza email di notifica">solo gestionale</span>' : '') +
+        (o[10] === "m" ? '<span class="badge" title="Importo e righe del gestionale: l\'ordine è cambiato dopo l\'invio">modificato dopo l\'invio</span>' : '') +
         (o[4] ? '<span class="badge">kit completo</span>' : '') +
         (o[6] ? ' · spedizione ' + eur(o[6]) : '') + ' · imponibile ' + eur(o[7]) + '</p>' +
       o[8].map(function(r){
@@ -715,7 +770,8 @@ function popupSensori(s){
   var c = CLI[s[0]], o = null, ic = D.cat.indexOf(SENS_CAT);
   for(var i = 0; i < c.ordini.length; i++) if(c.ordini[i][0] === s[4]){ o = c.ordini[i]; break; }
   var h = '<b>' + esc(c.nome) + '</b><br><span class="muted small">' + esc(c.citta) + (c.prov ? " (" + esc(c.prov) + ")" : "") +
-          ' · <span style="color:' + SENS_COL[s[3]] + ';font-weight:700">' + SENS_NOME[s[3]] + '</span></span>';
+          ' · <span style="color:' + SENS_COL[s[3]] + ';font-weight:700">' + SENS_NOME[s[3]] + '</span></span>' +
+          (c.g && c.g[3] ? '<br><span class="small">Tool nel gestionale: ' + esc(c.g[3]) + '</span>' : '');
   if(!o) return h;
   var righe = o[8].filter(function(r){ return r[7] === ic && !SENS_ESCLUSI.test(r[1]); }), tot = 0;
   righe.forEach(function(r){ tot += r[6]; });
@@ -763,6 +819,7 @@ function mostraSezione(v){
   for(var i = 0; i < s.length; i++) s[i].classList.toggle("on", s[i].id === "s-" + v);
   if(v === "mappa") mappa();   /* creata alla prima apertura: Leaflet non misura un elemento nascosto */
   if(v === "preventivi") sezionePreventivi();
+  if(v === "aperti") sezioneAperti();
 }
 function avvia(){
   prepara();
@@ -790,7 +847,7 @@ function avvia(){
   $("c-cat").innerHTML = optCat;
   riepilogo(); fermi(); prodotti(); chiCompra(); articoli(); andamento(); confronto();
   $("foot").innerHTML = num(D.meta.ordini, 0) + " ordini di " + num(D.meta.clienti, 0) + " clienti, " + PREC + " e " + ANNO + " · aggiornato il " + esc(D.meta.build) +
-    "<br>Solo ordini passati dal portale B2B. Importi = merce ordinata, IVA, spedizione e PFU esclusi. Non sono fatture: resi e note di credito non compaiono." +
+    "<br>Ordini dal portale B2B e dal gestionale" + (D.meta.gestionale ? " (export del " + dataIt(D.meta.gestionale) + ")" : "") + ". Importi = merce ordinata, con i valori del gestionale dove ci sono; IVA, spedizione e PFU esclusi. Gli ordini annullati non contano. Non sono fatture: resi e note di credito non compaiono." +
     '<br><button class="link" id="b-esci" type="button">Dimentica la passphrase su questo dispositivo</button>';
 }
 

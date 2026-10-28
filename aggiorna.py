@@ -19,6 +19,7 @@ QUI = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(QUI, "data"))
 import build as mod_build      # noqa: E402
 import carica_db               # noqa: E402
+import carica_export           # noqa: E402
 import estrai_mail             # noqa: E402
 
 
@@ -40,6 +41,12 @@ def main():
     ok, ko = carica_db.carica(con, cfg)
     carica_db.segna_anagrafica(con)
     carica_db.applica_profili(con)
+    # export del gestionale (Mak/mak-export-b2b, il lunedi'): importi, ordini della sede, annullati,
+    # anagrafica. Vince su notifiche e file madre; se gli Excel mancano non fa nulla.
+    try:
+        carica_export.carica(con)
+    except Exception as err:
+        print(f"Export del gestionale non caricato: {err}")
     r = carica_db.report(con)
 
     if not a.no_build:

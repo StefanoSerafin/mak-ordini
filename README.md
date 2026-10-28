@@ -28,8 +28,9 @@ cliente (da Mac, iPhone, iPad).
 - Il **totale dell'anno precedente** per cliente compare nella scheda, nel
   Riepilogo, nei Fermi e nelle viste di confronto. La ricerca clienti accetta
   anche il nome del network.
-- Sono **ordini, non fatture**: resi, note di credito e modifiche fatte dopo
-  l'ordine non compaiono. I totali sono "ordinato", non "fatturato".
+- Sono **ordini, non fatture**: resi e note di credito non compaiono. Le modifiche
+  fatte dopo l'ordine sì, dal lunedì in cui arriva l'export del gestionale. I totali
+  sono "ordinato", non "fatturato".
 - Importo di riferimento = **merce** (somma delle righe), senza IVA, spedizione,
   PFU e contrassegno.
 - **Network e tipo cliente** (Driver, Asconauto, Gommisti, Officine…) non sono
@@ -43,6 +44,19 @@ cliente (da Mac, iPhone, iPad).
   (`Rif.Interno:`), inglese (`Internal Reference`).
 - Il suffisso `(R)/(F)/(I)/(X)` accanto all'indirizzo nel PDF è salvato come
   `flag_cliente`; il significato non è noto e non incide sui totali.
+
+## Export del gestionale (dal 2026-10-28)
+
+Ogni lunedì `Mak/mak-export-b2b/scarica.py` scarica dal B2B due Excel del gestionale e `aggiorna.py` li carica con `data/carica_export.py` (anche a mano: `/usr/bin/python3 data/carica_export.py`). Il gestionale vince sulle email:
+
+- **Importi:** il valore di un ordine è la somma `Imp.Ord.` del gestionale (`ordini.merce_gestionale`); quello delle email (`merce_righe`) vale solo per gli ordini più recenti dell'ultimo export. Se i due importi differiscono di oltre 0,50 €, la pagina mostra le righe del gestionale con l'etichetta «modificato dopo l'invio».
+- **Ordini solo nel gestionale** (inseriti a mano dalla sede, email mancanti): entrano in `ordini` e `righe` con `fonte='gestionale'`, etichetta «solo gestionale». Se più tardi arriva il PDF, lo sostituisce.
+- **Annullati:** ordini del DB assenti dall'export e di un giorno precedente al suo ultimo: `annullato=1`. Non contano in nessun totale e si vedono solo nella scheda cliente, barrati. Gli omaggi non vengono mai segnati annullati.
+- **Ordini aperti:** `gestionale_righe` ha quantità spedita e residua, consegna prevista e vettura. Sezione «Aperti» della pagina e «Da spedire» nella scheda cliente.
+- **Anagrafica:** `anagrafica_b2b` tiene solo colonne commerciali (listino, campagna, pagamento, network, ultimo accesso B2B, fatturato del gestionale, tool TPMS, WhatsApp, priorità, P.IVA). **Mai** utente/password B2B, telefoni, email, indirizzi: un test lo verifica. Network, tipo, P.IVA e «in anagrafica» dei clienti vengono da qui; notifiche e file madre restano solo come ripiego.
+- La scheda cliente mostra il **fatturato del gestionale** (con resi e note di credito) accanto all'ordinato.
+
+Primo caricamento (2026-10-28): 6.465 ordini abbinati, 111 entrati dal gestionale, 232 con importo diverso, 103 annullati. Dopo il caricamento il totale 2025 coincide con l'export al centesimo. Copia del DB prima del caricamento: `data/log/ordini-backup-2026-10-28-prima-export.db`.
 
 ## Telefonate nella scheda cliente (dal 2026-10-16)
 

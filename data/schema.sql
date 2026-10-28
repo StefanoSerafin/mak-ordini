@@ -108,3 +108,61 @@ CREATE TABLE IF NOT EXISTS preventivi_articoli (
 CREATE INDEX IF NOT EXISTS ix_prev_cliente  ON preventivi(cliente_codice);
 CREATE INDEX IF NOT EXISTS ix_prev_art      ON preventivi_articoli(preventivo_id);
 CREATE INDEX IF NOT EXISTS ix_prev_articolo ON preventivi_articoli(codice_articolo);
+
+-- Export del gestionale scaricati dal B2B (Mak/mak-export-b2b, dal 2026-10-28): fotografie complete,
+-- riscritte per intero a ogni giro da data/carica_export.py.
+CREATE TABLE IF NOT EXISTS gestionale_righe (
+    ordine_id     TEXT,                    -- I_<numero>, come ordini.id
+    st_ord        TEXT,                    -- stato ordine: SA saldato, AP aperto, EP parz. evaso, IA in approvazione
+    dt_ord        TEXT,                    -- AAAA-MM-GG
+    canale        TEXT,                    -- B2BCLI cliente, B2BAGE agente, B2BMAS/B2BAGC/*** sede o altro
+    rif_cliente   TEXT,
+    cod_cliente   TEXT,                    -- 6 cifre
+    cod_articolo  TEXT,
+    descrizione   TEXT,
+    diametro      TEXT,
+    qta_ord       REAL,
+    dt_cons       TEXT,                    -- consegna prevista
+    imp_ord       REAL,
+    qta_spe       REAL,
+    imp_spe       REAL,
+    qta_res       REAL,                    -- ancora da spedire
+    imp_res       REAL,
+    st_riga       TEXT,
+    auto_marca    TEXT,
+    auto_modello  TEXT,
+    mag           TEXT,
+    categoria     TEXT                     -- da categorie.json, come righe.categoria
+);
+CREATE INDEX IF NOT EXISTS ix_gr_ordine  ON gestionale_righe(ordine_id);
+CREATE INDEX IF NOT EXISTS ix_gr_cliente ON gestionale_righe(cod_cliente);
+
+-- Anagrafica clienti del gestionale: SOLO le colonne della lista bianca di carica_export.py.
+-- Mai utente/password B2B, telefoni, cellulari, email, indirizzi.
+CREATE TABLE IF NOT EXISTS anagrafica_b2b (
+    codice            TEXT PRIMARY KEY,    -- 6 cifre
+    ragione_sociale   TEXT,
+    tipo              TEXT,
+    network           TEXT,
+    network2          TEXT,
+    localita          TEXT,
+    provincia         TEXT,
+    listino           TEXT,
+    campagna          TEXT,
+    pagamento         TEXT,
+    b2b               INTEGER,             -- 1 accesso B2B attivo, 0 no, 2 altro (come nel gestionale)
+    b2b_ultimo        TEXT,                -- ultimo accesso al B2B, AAAA-MM-GG; NULL = mai
+    fatt_prec         REAL,                -- fatturato anno precedente (gestionale)
+    fatt_corr         REAL,                -- fatturato anno corrente
+    ult_acq_tpms      TEXT,                -- ultimo acquisto sensori TPMS universali, AAAA-MM-GG
+    tool_tpms         TEXT,                -- marca dello strumento dichiarata
+    tool_orange       TEXT,
+    tool_autel        TEXT,
+    tool_ateq         TEXT,
+    obd               TEXT,
+    whatsapp          TEXT,
+    marca             TEXT,                -- marca auto (concessionari)
+    priorita          TEXT,
+    piva              TEXT,
+    cod_fiscale       TEXT
+);

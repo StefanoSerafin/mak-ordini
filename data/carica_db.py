@@ -35,12 +35,23 @@ def apri():
     for c in ("network", "tipo"):
         if c not in colonne:
             con.execute(f"ALTER TABLE clienti ADD COLUMN {c} TEXT")
+    # colonne dell'export del gestionale (data/carica_export.py, dal 2026-10-28)
+    colonne = {r["name"] for r in con.execute("PRAGMA table_info(ordini)")}
+    for c, tipo in (("fonte", "TEXT DEFAULT 'mail'"),       # mail | gestionale | entrambi
+                    ("merce_gestionale", "REAL"),           # somma Imp.Ord. dell'export
+                    ("stato_gestionale", "TEXT"),
+                    ("canale", "TEXT"),
+                    ("annullato", "INTEGER DEFAULT 0")):    # notificato per email ma assente dal gestionale
+        if c not in colonne:
+            con.execute(f"ALTER TABLE ordini ADD COLUMN {c} {tipo}")
     return con
 
 
 def applica_profili(con):
     """Network e Tipo cliente dal corpo delle notifiche (data/log/profili.json):
-    per ogni cliente vale l'ordine piu' recente che li riporta."""
+    per ogni cliente vale l'ordine piu' recente che li riporta. Ripiego: i clienti presenti
+    nell'anagrafica del gestionale (anagrafica_b2b) non si toccano."""
+    dal_gestionale = gestionale_presente(con)
     try:
         with open(os.path.join(LOG_DIR, "profili.json"), encoding="utf-8") as f:
             profili = json.load(f)
@@ -50,12 +61,20 @@ def applica_profili(con):
     with con:
         for r in con.execute("SELECT id, codice_cliente FROM ordini ORDER BY data_ora DESC").fetchall():
             p = profili.get(r["id"])
-            if p is None or r["codice_cliente"] in visti:
+            if p is None or r["codice_cliente"] in visti or r["codice_cliente"] in dal_gestionale:
                 continue
             visti.add(r["codice_cliente"])
             con.execute("UPDATE clienti SET network=?, tipo=? WHERE codice=?",
                         (p.get("network") or None, p.get("tipo") or None, r["codice_cliente"]))
     return len(visti)
+
+
+def gestionale_presente(con):
+    """Codici dell'anagrafica del gestionale caricata da carica_export.py (vuoto se non c'e')."""
+    try:
+        return {r[0] for r in con.execute("SELECT codice FROM anagrafica_b2b")}
+    except sqlite3.OperationalError:
+        return set()
 
 
 def carica_regole():
@@ -124,8 +143,9 @@ def inserisci(con, o, cfg, nome_pdf):
 
 
 def carica(con, cfg, verbose=True):
-    gia = {r["pdf"] for r in con.execute("SELECT pdf FROM ordini")}
+    gia = {r["pdf"] for r in con.execute("SELECT pdf FROM ordini WHERE pdf IS NOT NULL")}
     gia_id = {r["id"] for r in con.execute("SELECT id FROM ordini")}
+    solo_gest = {r["id"] for r in con.execute("SELECT id FROM ordini WHERE fonte='gestionale'")}
     with con:   # i PDF scartati in passato si riprovano a ogni giro (il parser puo' essere migliorato)
         con.execute("DELETE FROM scarti WHERE origine='pdf'")
     nuovi = sorted(f for f in os.listdir(PDF_DIR) if f.endswith(".pdf") and f not in gia)
@@ -143,6 +163,14 @@ def carica(con, cfg, verbose=True):
                     continue
                 os.rename(os.path.join(PDF_DIR, f), os.path.join(PDF_DIR, giusto))
                 f = giusto
+            if o["id"] in solo_gest:
+                # entrato prima dall'export del gestionale: il PDF ha piu' dettagli (prezzo, sconto,
+                # applicazione) e lo sostituisce; il prossimo carica_export lo segna 'entrambi'
+                with con:
+                    con.execute("DELETE FROM righe WHERE ordine_id=?", (o["id"],))
+                    con.execute("DELETE FROM ordini WHERE id=?", (o["id"],))
+                gia_id.discard(o["id"])
+                solo_gest.discard(o["id"])
             if o["id"] in gia_id:
                 raise ValueError(f"ordine {o['id']} gia' caricato da un altro PDF")
             with con:
@@ -166,8 +194,9 @@ def riclassifica(con, cfg):
 
 
 def segna_anagrafica(con):
-    """Legge SOLO le colonne CLIENTE e COD. del foglio Clienti. Mai ID/PWD."""
-    if not os.path.exists(ANAGRAFICA):
+    """Legge SOLO le colonne CLIENTE e COD. del foglio Clienti. Mai ID/PWD.
+    Ripiego: se c'e' l'anagrafica del gestionale, "in anagrafica" lo decide quella."""
+    if gestionale_presente(con) or not os.path.exists(ANAGRAFICA):
         return None
     import warnings
     import openpyxl
@@ -229,8 +258,10 @@ def report(con, verbose=True):
         print(f"Ordini {r['ordini']} | clienti {r['clienti']} | righe {r['righe']} | merce {r['merce']:.2f}")
         print(f"Periodo {r['periodo'][0]} -> {r['periodo'][1]}")
         for x in q("SELECT substr(data_ora,1,4) anno, COUNT(*) n, COUNT(DISTINCT codice_cliente) c,"
-                   " SUM(CASE WHEN omaggio=0 THEN merce_righe ELSE 0 END) s FROM ordini GROUP BY 1 ORDER BY 1"):
-            print(f"  {x['anno']}: {x['n']} ordini, {x['c']} clienti, merce {x['s']:.2f} (omaggi esclusi)")
+                   " SUM(CASE WHEN omaggio=0 THEN COALESCE(merce_gestionale, merce_righe) ELSE 0 END) s"
+                   " FROM ordini WHERE COALESCE(annullato,0)=0 GROUP BY 1 ORDER BY 1"):
+            print(f"  {x['anno']}: {x['n']} ordini, {x['c']} clienti, merce {x['s']:.2f}"
+                  " (omaggi e annullati esclusi, importi del gestionale dove ci sono)")
         print(f"Non quadrano: {len(r['non_quadrano'])} | senza imponibile: {r['senza_imponibile']} | "
               f"multipagina: {len(r['multipagina'])} | PDF scartati: {r['scarti_pdf']} | "
               f"clienti fuori anagrafica: {r['fuori_anagrafica']} | "

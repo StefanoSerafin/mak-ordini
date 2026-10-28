@@ -95,10 +95,21 @@ def clienti_solo_ordini(madre, percorso_db=DB):
         return []
     noti = {c["codice"] for c in madre}
     con = sqlite3.connect(f"file:{percorso_db}?mode=ro", uri=True)
-    righe = con.execute("SELECT codice, ragione_sociale, network FROM clienti").fetchall()
+    righe = con.execute("SELECT codice, ragione_sociale, network, '' FROM clienti").fetchall()
+    # anagrafica del gestionale (export del lunedi', dal 2026-10-28): clienti che il file madre non ha,
+    # con il codice listino (prima parola, es. "SD"). Per i clienti del file madre vale il suo LISTINO 26:
+    # su molti clienti i due non coincidono (SQ nel file madre, SD nel gestionale), decide Stefano.
+    if con.execute("SELECT 1 FROM sqlite_master WHERE name='anagrafica_b2b'").fetchone():
+        righe = con.execute("SELECT codice, ragione_sociale, network, listino FROM anagrafica_b2b").fetchall() + righe
     con.close()
-    return [{"codice": codice6(c), "nome": (n or "").strip(), "listino": "", "network": (net or "").strip()}
-            for c, n, net in righe if codice6(c) and codice6(c) not in noti and (n or "").strip()]
+    out, visti = [], set(noti)
+    for c, n, net, lst in righe:
+        c = codice6(c)
+        if c and c not in visti and (n or "").strip():
+            visti.add(c)
+            out.append({"codice": c, "nome": (n or "").strip(), "listino": (lst or "").split()[0] if (lst or "").strip() else "",
+                        "network": (net or "").strip()})
+    return out
 
 
 def esporta_clienti(git=True):
