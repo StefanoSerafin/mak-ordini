@@ -1,6 +1,6 @@
 """Preventivi della webapp mak-preventivi nel database ordini (dal 2026-10-24).
 
-    python3 data/preventivi.py clienti     # file madre -> Mak/mak-preventivi-dati/clienti.json (push se cambiato)
+    python3 data/preventivi.py clienti     # gestionale (+ file madre) -> Mak/mak-preventivi-dati/clienti.json (push se cambiato)
     python3 data/preventivi.py importa     # pull dell'archivio -> tabelle preventivi e preventivi_articoli
     python3 data/preventivi.py esiti       # confronto con gli ordini dei 30 giorni dopo
     python3 data/preventivi.py riepilogo   # tabella per mese ed esito, a terminale
@@ -61,7 +61,7 @@ def _git(*args):
     return subprocess.run(["git", "-C", ARCHIVIO] + list(args), capture_output=True, text=True)
 
 
-# ---------- clienti: file madre -> clienti.json ----------
+# ---------- clienti: gestionale (+ file madre) -> clienti.json ----------
 
 def leggi_madre(percorso=MADRE):
     import openpyxl
@@ -96,9 +96,7 @@ def clienti_solo_ordini(madre, percorso_db=DB):
     noti = {c["codice"] for c in madre}
     con = sqlite3.connect(f"file:{percorso_db}?mode=ro", uri=True)
     righe = con.execute("SELECT codice, ragione_sociale, network, '' FROM clienti").fetchall()
-    # anagrafica del gestionale (export del lunedi', dal 2026-10-28): clienti che il file madre non ha,
-    # con il codice listino (prima parola, es. "SD"). Per i clienti del file madre vale il suo LISTINO 26:
-    # su molti clienti i due non coincidono (SQ nel file madre, SD nel gestionale), decide Stefano.
+    # anagrafica del gestionale: di solito gia' passata da esporta_clienti, qui serve da rete di sicurezza
     if con.execute("SELECT 1 FROM sqlite_master WHERE name='anagrafica_b2b'").fetchone():
         righe = con.execute("SELECT codice, ragione_sociale, network, listino FROM anagrafica_b2b").fetchall() + righe
     con.close()
@@ -112,8 +110,28 @@ def clienti_solo_ordini(madre, percorso_db=DB):
     return out
 
 
+def clienti_gestionale(percorso_db=DB):
+    """Clienti dall'anagrafica del gestionale (tabella anagrafica_b2b, export del lunedi'):
+    codice, nome, codice listino (prima parola, es. "SD"), network. Vuoto se non e' ancora caricata."""
+    if not os.path.exists(percorso_db):
+        return []
+    con = sqlite3.connect(f"file:{percorso_db}?mode=ro", uri=True)
+    try:
+        righe = con.execute("SELECT codice, ragione_sociale, listino, network FROM anagrafica_b2b").fetchall()
+    except sqlite3.OperationalError:
+        righe = []
+    con.close()
+    return [{"codice": codice6(c), "nome": (n or "").strip(), "listino": (l or "").split()[0] if (l or "").strip() else "",
+             "network": (net or "").strip()} for c, n, l, net in righe if codice6(c) and (n or "").strip()]
+
+
 def esporta_clienti(git=True):
-    clienti = leggi_madre()
+    # vale sempre il gestionale (scelta di Stefano, 2026-10-28): listino, nome e network dall'anagrafica
+    # del gestionale; il file madre solo per i clienti che il gestionale non ha, poi quelli dei soli ordini
+    gest = clienti_gestionale()
+    noti = {c["codice"] for c in gest}
+    madre = [c for c in leggi_madre() if c["codice"] not in noti]
+    clienti = gest + madre
     clienti = sorted(clienti + clienti_solo_ordini(clienti), key=lambda c: c["nome"].upper())
     testo = json.dumps(clienti, ensure_ascii=False, indent=0) + "\n"
     dest = os.path.join(ARCHIVIO, "clienti.json")
@@ -128,7 +146,7 @@ def esporta_clienti(git=True):
     print(f"clienti.json aggiornato: {len(clienti)} clienti")
     if git:
         _git("add", "clienti.json")
-        _git("commit", "-q", "-m", "clienti aggiornati dal file madre")
+        _git("commit", "-q", "-m", "clienti aggiornati dal gestionale")
         r = _git("push", "-q")
         if r.returncode:
             print("push di clienti.json non riuscito:", r.stderr.strip())

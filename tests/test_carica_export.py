@@ -110,7 +110,10 @@ class TestCaricaExport(unittest.TestCase):
         self.assertEqual(s["abbinati"], 1)
         self.assertEqual(s["inseriti"], 2)
         o = self.stato("I_100")
-        self.assertEqual((o["fonte"], o["merce_gestionale"], o["annullato"]), ("entrambi", 100.0, 0))
+        self.assertEqual((o["fonte"], o["merce_gestionale"], o["annullato"], o["modificato"], o["merce_righe"]),
+                         ("entrambi", 100.0, 0, 1, 100.0))
+        r100 = self.con.execute("SELECT importo, applicazione FROM righe WHERE ordine_id='I_100'").fetchall()
+        self.assertEqual([tuple(x) for x in r100], [(100.0, "FIAT PANDA")])
         self.assertEqual(self.stato("I_101")["annullato"], 1)
         self.assertEqual(self.stato("I_102")["annullato"], 0)
         self.assertEqual((self.stato("I_103")["annullato"], self.stato("I_103")["omaggio"]), (0, 1))

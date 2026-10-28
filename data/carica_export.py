@@ -7,7 +7,8 @@
 
 Regole (piano plans/2026-10-28-export-gestionale-nel-database-ordini.md):
 - gestionale_righe e anagrafica_b2b si riscrivono per intero: l'export e' una fotografia completa;
-- ordini presenti in tutti e due: fonte='entrambi', merce_gestionale = somma Imp.Ord.;
+- ordini presenti in tutti e due: fonte='entrambi', merce_gestionale = somma Imp.Ord.; se l'importo della
+  notifica non torna (ordine cambiato dopo l'invio) le righe diventano quelle del gestionale, modificato=1;
 - ordini solo nell'export (inseriti dalla sede, email mancanti): entrano in ordini e righe, fonte='gestionale';
 - ordini del DB assenti dall'export e piu' vecchi del suo ultimo giorno: annullato=1 (gli omaggi no:
   il gestionale non li riporta e in pagina valgono gia' 0);
@@ -113,7 +114,7 @@ def carica_ordini(con, path=FILE_OR, cfg=None):
     if not per_ordine:
         raise ValueError("export ordini vuoto")
     ultimo_giorno = max(rr[0]["dt_ord"] for rr in per_ordine.values())
-    nel_db = {x["id"]: x for x in con.execute("SELECT id, merce_righe, fonte FROM ordini")}
+    nel_db = {x["id"]: x for x in con.execute("SELECT id, merce_righe, fonte, modificato FROM ordini")}
     stat = {"ordini_export": len(per_ordine), "righe_export": len(righe), "abbinati": 0, "inseriti": 0,
             "importo_diverso": 0, "ultimo_giorno": ultimo_giorno}
     cols = ["ordine_id", "st_ord", "dt_ord", "canale", "rif_cliente", "cod_cliente", "cod_articolo",
@@ -130,12 +131,16 @@ def carica_ordini(con, path=FILE_OR, cfg=None):
             toccati.add(t["cod_cliente"])
             if oid in nel_db:
                 stat["abbinati"] += 1
-                if abs(merce - (nel_db[oid]["merce_righe"] or 0)) > 0.5:
-                    stat["importo_diverso"] += 1
                 fonte = "gestionale" if nel_db[oid]["fonte"] == "gestionale" else "entrambi"
-                con.execute("UPDATE ordini SET merce_gestionale=?, stato_gestionale=?, canale=?, fonte=?, annullato=0"
-                            " WHERE id=?", (merce, t["st_ord"], t["canale"], fonte, oid))
-                if fonte == "gestionale":   # gia' inserito da un giro precedente: righe allineate all'export
+                # vale sempre il gestionale (scelta di Stefano, 2026-10-28): se l'importo della notifica non
+                # torna, l'ordine e' cambiato dopo l'invio e le sue righe diventano quelle del gestionale
+                modificato = fonte == "entrambi" and (nel_db[oid]["modificato"] or
+                                                      abs(merce - (nel_db[oid]["merce_righe"] or 0)) > 0.5)
+                if modificato:
+                    stat["importo_diverso"] += 1
+                con.execute("UPDATE ordini SET merce_gestionale=?, stato_gestionale=?, canale=?, fonte=?, annullato=0,"
+                            " modificato=? WHERE id=?", (merce, t["st_ord"], t["canale"], fonte, 1 if modificato else 0, oid))
+                if fonte == "gestionale" or modificato:   # righe allineate all'export
                     con.execute("DELETE FROM righe WHERE ordine_id=?", (oid,))
                     _righe_da_export(con, oid, rr)
                     con.execute("UPDATE ordini SET merce_righe=? WHERE id=?", (merce, oid))
@@ -229,7 +234,7 @@ def stampa(con, stat):
                          " SUM(CASE WHEN omaggio=0 THEN COALESCE(merce_gestionale, merce_righe) ELSE 0 END) s,"
                          " SUM(CASE WHEN omaggio=0 THEN merce_righe ELSE 0 END) m"
                          " FROM ordini WHERE annullato=0 GROUP BY 1 ORDER BY 1"):
-        print(f"  {x['a']}: {x['n']} ordini, merce {x['s']:.2f} (importi delle email: {x['m']:.2f})")
+        print(f"  {x['a']}: {x['n']} ordini, merce {x['s']:.2f} (somma delle righe: {x['m']:.2f})")
 
 
 def main():

@@ -78,17 +78,14 @@ def dataset(dal=PAGINA_DAL):
             icat[c] = len(cat)
             cat.append(c)
         return icat[c]
-    vett, righe_gest = {}, {}
+    # vettura dal gestionale per le righe della notifica che non la riportano
+    vett = {}
     if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gestionale_righe'").fetchone():
-        for g in con.execute("SELECT ordine_id, cod_articolo, descrizione, qta_ord, imp_ord, categoria,"
-                             " auto_marca, auto_modello FROM gestionale_righe WHERE dt_ord >= ?", (dal[:10],)):
+        for g in con.execute("SELECT ordine_id, cod_articolo, auto_marca, auto_modello FROM gestionale_righe"
+                             " WHERE dt_ord >= ?", (dal[:10],)):
             v = " ".join(x for x in (g["auto_marca"], g["auto_modello"]) if x)
             if v:
                 vett.setdefault((g["ordine_id"], g["cod_articolo"]), v)
-            q = g["qta_ord"] or 0
-            righe_gest.setdefault(g["ordine_id"], []).append([
-                g["cod_articolo"], g["descrizione"], v, q, round((g["imp_ord"] or 0) / q, 2) if q else 0, "",
-                g["imp_ord"] or 0, icat_di(g["categoria"]), ""])
     # omaggi: restano visibili (articoli e pezzi) ma valgono 0, per non gonfiare i totali
     omaggi = {r["id"] for r in con.execute("SELECT id FROM ordini WHERE omaggio=1")}
     for r in con.execute("SELECT ordine_id, cod_articolo, descrizione, applicazione, qta, prezzo, sconto,"
@@ -101,7 +98,7 @@ def dataset(dal=PAGINA_DAL):
             r["sconto"] or "", 0 if om else r["importo"], icat_di(r["categoria"]), r["coupon"] or ""])
     ordini, annullati = [], []
     for r in con.execute("SELECT id, codice_cliente, data_ora, inserito_da, kit_completo, merce_righe,"
-                         " spedizione, imponibile, merce_gestionale, fonte, annullato FROM ordini"
+                         " spedizione, imponibile, merce_gestionale, fonte, annullato, modificato FROM ordini"
                          " WHERE data_ora >= ? ORDER BY data_ora DESC", (dal,)):
         om = r["id"] in omaggi
         if r["annullato"]:
@@ -114,9 +111,8 @@ def dataset(dal=PAGINA_DAL):
         flag = ""
         if r["fonte"] == "gestionale":
             flag = "g"                   # solo nel gestionale: nessuna email (sede, email mancante)
-        elif r["merce_gestionale"] is not None and abs(r["merce_gestionale"] - (r["merce_righe"] or 0)) > 0.5:
-            flag = "m"                   # modificato dopo l'invio: righe e importi del gestionale
-            rr = righe_gest.get(r["id"], rr)
+        elif r["modificato"]:
+            flag = "m"                   # modificato dopo l'invio: righe e importi del gestionale (carica_export)
         ordini.append([r["id"], icli[r["codice_cliente"]], (r["data_ora"] or "")[:16],
                        UTENTE.get(r["inserito_da"], "x"), r["kit_completo"] or 0, 0 if om else merce,
                        r["spedizione"] or 0, 0 if om else (r["imponibile"] or 0), [x[:6] + [0 if om else x[6]] + x[7:] for x in rr],

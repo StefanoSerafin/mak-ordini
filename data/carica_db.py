@@ -41,7 +41,8 @@ def apri():
                     ("merce_gestionale", "REAL"),           # somma Imp.Ord. dell'export
                     ("stato_gestionale", "TEXT"),
                     ("canale", "TEXT"),
-                    ("annullato", "INTEGER DEFAULT 0")):    # notificato per email ma assente dal gestionale
+                    ("annullato", "INTEGER DEFAULT 0"),     # notificato per email ma assente dal gestionale
+                    ("modificato", "INTEGER DEFAULT 0")):   # cambiato dopo l'invio: righe del gestionale
         if c not in colonne:
             con.execute(f"ALTER TABLE ordini ADD COLUMN {c} {tipo}")
     return con
