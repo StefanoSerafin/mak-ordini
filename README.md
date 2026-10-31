@@ -93,6 +93,16 @@ python3 data/preventivi.py riepilogo   # tabella per mese ed esito
 - **Automatismi**: `notturno.sh` (20:00) aggiorna elenco clienti, preventivi ed esiti; il briefing del lunedì ricalcola gli esiti dopo gli ordini nuovi e elenca i «Preventivi senza ordine da richiamare» (in corso, fatti tra 30 e 7 giorni prima); le pagine cliente del wiki hanno la sezione «Preventivi».
 - Test: `python3 -m unittest discover -s tests` (dati inventati: il repo è pubblico).
 
+## Chat WhatsApp (dal 2026-10-31)
+
+Le chat dei clienti estratte dal backup dell'iPhone (`Mak/mak-chat-extractor`, database `output/backup/mak_chat.db`) entrano in tre tabelle con `data/carica_whatsapp.py` (`--report` solo conteggi), riscritte per intero a ogni giro:
+
+- `whatsapp_clienti`: per cliente primo e ultimo messaggio, ultimo messaggio del cliente, messaggi suoi e di Stefano, foto e vocali mandati, domande con e senza risposta entro 72 ore, tempo di risposta mediano, argomenti;
+- `whatsapp_domande`: le coppie domanda del cliente → risposta di Stefano, **in chiaro** (stessa regola di `qa_whatsapp.coppie_chat`);
+- `whatsapp_libretti`: dati tecnici dei libretti letti dalle foto in chat (marca, modello, anno, omologazione, misure ammesse, richiesta e risposta attorno alla foto); mai targa, telaio, intestatario.
+
+Il codice cliente arriva da `_codice.txt` di ogni cartella chat. Primo giro: 921 clienti, 4.536 domande, 49 libretti. Dal 2026-10-31 `build.py` (`whatsapp()`) le mette nella pagina cifrata: sezione **WhatsApp** della scheda cliente con riepilogo, libretti e domande e risposte (testi tagliati a 600 caratteri); i clienti con chat ma senza ordini compaiono comunque nella ricerca. La pagina passa da 2,8 a 3,9 MB. `carica_whatsapp.py` non è nei giri automatici: si rilancia dopo un nuovo backup dell'iPhone, la sera dopo la pagina si ripubblica da sola.
+
 ## Mappa sensori (dal 2026-10-18)
 
 La sezione **Mappa** mostra su OpenStreetMap i clienti che hanno comprato sensori TPMS

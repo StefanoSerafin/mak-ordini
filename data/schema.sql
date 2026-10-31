@@ -166,3 +166,48 @@ CREATE TABLE IF NOT EXISTS anagrafica_b2b (
     piva              TEXT,
     cod_fiscale       TEXT
 );
+
+-- Chat WhatsApp con i clienti (dal 2026-10-31): dal backup dell'iPhone via Mak/mak-chat-extractor
+-- (backup_export.py -> extract.py -> mak_chat.db), caricate con data/carica_whatsapp.py.
+-- Si riscrivono per intero a ogni caricamento. Testi in chiaro nel database; nella pagina cifrata dal 2026-10-31 (build.py whatsapp(), tagliati a 600 caratteri).
+CREATE TABLE IF NOT EXISTS whatsapp_clienti (
+    codice             TEXT PRIMARY KEY,   -- codice cliente del gestionale (da _codice.txt della cartella chat)
+    primo_msg          TEXT,               -- AAAA-MM-GG
+    ultimo_msg         TEXT,
+    ultimo_msg_cliente TEXT,               -- ultimo messaggio scritto dal cliente (non broadcast)
+    msg_cliente        INTEGER,            -- messaggi scritti dal cliente
+    msg_stefano        INTEGER,            -- messaggi di Stefano fuori dal broadcast
+    foto_cliente       INTEGER,            -- foto e documenti mandati dal cliente
+    vocali_cliente     INTEGER,
+    domande            INTEGER,            -- domande con risposta scritta entro 72 h
+    senza_risposta     INTEGER,            -- domande senza risposta scritta entro 72 h
+    minuti_mediani     REAL,               -- tempo di risposta mediano di Stefano
+    argomenti          TEXT,               -- JSON {argomento: domande}
+    caricato           TEXT
+);
+
+CREATE TABLE IF NOT EXISTS whatsapp_domande (
+    codice    TEXT NOT NULL,
+    data_ora  TEXT,                        -- inizio della domanda, ISO
+    domanda   TEXT,                        -- testo del cliente (turno intero, in chiaro)
+    risposta  TEXT,                        -- prima risposta scritta di Stefano
+    minuti    REAL,
+    argomenti TEXT                         -- JSON lista
+);
+
+-- Dati tecnici letti dai libretti mandati in chat (prova del 2026-10-31): mai targa, telaio, intestatario.
+CREATE TABLE IF NOT EXISTS whatsapp_libretti (
+    codice      TEXT NOT NULL,
+    data_ora    TEXT,
+    marca       TEXT,
+    modello     TEXT,
+    anno        TEXT,                      -- prima immatricolazione, solo l'anno
+    omologazione TEXT,                     -- numero di omologazione / tipo (campo K / D.2)
+    pneumatici  TEXT,                      -- misure ammesse dal libretto, separate da " | "
+    leggibile   INTEGER,                   -- 1 si', 0 foto illeggibile o non un libretto
+    richiesta   TEXT,                      -- cosa chiedeva il cliente attorno alla foto
+    risposta    TEXT                       -- cosa ha risposto/proposto Stefano
+);
+
+CREATE INDEX IF NOT EXISTS ix_wa_dom_cliente ON whatsapp_domande(codice);
+CREATE INDEX IF NOT EXISTS ix_wa_lib_cliente ON whatsapp_libretti(codice);

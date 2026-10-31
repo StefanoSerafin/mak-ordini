@@ -119,11 +119,13 @@ def dataset(dal=PAGINA_DAL):
                        1 if om else 0, flag])
     tel = telefonate(clienti, icli)
     prev = preventivi(con, clienti, icli)
+    wa = whatsapp(con, clienti, icli)
     per = con.execute("SELECT MIN(data_ora) a, MAX(data_ora) b FROM ordini WHERE data_ora >= ?", (dal,)).fetchone()
     meta = {
         "build": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "dal": (per["a"] or "")[:10], "al": (per["b"] or "")[:10],
         "ordini": len(ordini), "clienti": len(clienti), "telefonate": len(tel), "preventivi": len(prev),
+        "whatsapp": len(wa["r"]),
     }
     sens, senza = sensori(con, icli, meta["al"], dal)
     meta["sens"] = {m: sum(1 for s in sens if s[3] == m) for m in "AMX"}
@@ -134,7 +136,7 @@ def dataset(dal=PAGINA_DAL):
     meta["aperti"] = len(ap)
     meta["gestionale"] = gestionale_al(con)
     return {"meta": meta, "cat": cat, "clienti": clienti, "ordini": ordini, "tel": tel, "sens": sens, "prev": prev,
-            "ann": annullati, "aperti": ap}
+            "ann": annullati, "aperti": ap, "wa": wa}
 
 
 def anagrafica(con):
@@ -295,6 +297,40 @@ def preventivi(con, clienti, icli):
                     r["esito"] or "in_corso", articoli.get(r["id"], []), r["cliente_nome"] or "",
                     (r["esito_data"] or "")[:10]])
     return out
+
+
+# Chat WhatsApp (tabelle whatsapp_*, vedi data/carica_whatsapp.py). Testi tagliati a TAGLIO_WA caratteri.
+TAGLIO_WA = 600
+
+
+def whatsapp(con, clienti, icli):
+    """{"r": [[cliente, primo, ultimo, ultimo del cliente, msg cliente, msg Stefano, foto, vocali, domande,
+    senza risposta, minuti mediani], ...], "d": [[cliente, data e ora, domanda, risposta, minuti], ...] dalla più
+    recente, "l": [[cliente, data, marca, modello, anno, omologazione, pneumatici], ...]}.
+    Aggiunge a `clienti` quelli che hanno chat ma nessun ordine dal PAGINA_DAL."""
+    if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='whatsapp_clienti'").fetchone():
+        return {"r": [], "d": [], "l": []}
+
+    def indice(cod):
+        if cod not in icli:
+            a = con.execute("SELECT ragione_sociale, citta, provincia FROM clienti WHERE codice=? UNION ALL "
+                            "SELECT ragione_sociale, '', provincia FROM anagrafica_b2b WHERE codice=?", (cod, cod)).fetchone()
+            icli[cod] = len(clienti)
+            clienti.append([cod, (a["ragione_sociale"] if a else cod) or cod, (a["citta"] if a else "") or "",
+                            (a["provincia"] if a else "") or "", "", 1, "", ""])
+        return icli[cod]
+
+    t = lambda s: (s or "")[:TAGLIO_WA]
+    r = [[indice(x["codice"]), x["primo_msg"], x["ultimo_msg"], x["ultimo_msg_cliente"] or "", x["msg_cliente"],
+          x["msg_stefano"], x["foto_cliente"], x["vocali_cliente"], x["domande"], x["senza_risposta"],
+          round(x["minuti_mediani"]) if x["minuti_mediani"] is not None else None]
+         for x in con.execute("SELECT * FROM whatsapp_clienti")]
+    d = [[indice(x["codice"]), (x["data_ora"] or "")[:16].replace("T", " "), t(x["domanda"]), t(x["risposta"]),
+          round(x["minuti"] or 0)] for x in con.execute("SELECT * FROM whatsapp_domande ORDER BY data_ora DESC")]
+    l = [[indice(x["codice"]), (x["data_ora"] or "")[:10], x["marca"] or "", x["modello"] or "", x["anno"] or "",
+          x["omologazione"] or "", x["pneumatici"] or ""]
+         for x in con.execute("SELECT * FROM whatsapp_libretti ORDER BY data_ora DESC")]
+    return {"r": r, "d": d, "l": l}
 
 
 def cifra(plaintext, passphrase):
