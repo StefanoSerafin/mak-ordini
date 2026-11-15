@@ -276,7 +276,8 @@ def telefonate(clienti, icli):
 # Preventivi della webapp mak-preventivi (tabelle preventivi e preventivi_articoli, vedi data/preventivi.py).
 def preventivi(con, clienti, icli):
     """[indice cliente o -1 se da abbinare, data e ora, vettura, esito, [[modello, finitura, misure, netto], …],
-    nome scritto nella webapp, data dell'ordine che ha dato l'esito]. Dal più recente.
+    nome scritto nella webapp, data dell'ordine che ha dato l'esito, ultima conferma d'ordine del rivenditore
+    [data e ora, numero, articolo, totale, nota] o None]. Dal più recente.
     Aggiunge a `clienti` quelli che hanno preventivi ma nessun ordine dal PAGINA_DAL."""
     if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='preventivi'").fetchone():
         return []
@@ -285,6 +286,11 @@ def preventivi(con, clienti, icli):
                          " ORDER BY preventivo_id, n"):
         articoli.setdefault(r["preventivo_id"], []).append(
             [r["modello"] or "", r["finitura"] or "", r["misure"] or "", r["netto"] or 0])
+    conferme = {}
+    if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='preventivi_conferme'").fetchone():
+        for r in con.execute("SELECT * FROM preventivi_conferme ORDER BY data_ora"):
+            conferme[r["preventivo_id"]] = [(r["data_ora"] or "")[:16].replace("T", " "), r["numero"],
+                                            r["articolo"] or "", r["totale"] or 0, r["nota"] or ""]
     out = []
     for r in con.execute("SELECT * FROM preventivi ORDER BY data_ora DESC"):
         cod = r["cliente_codice"] or ""
@@ -295,7 +301,7 @@ def preventivi(con, clienti, icli):
                             (a["citta"] if a else "") or "", (a["provincia"] if a else "") or "", "", 1, "", ""])
         out.append([icli[cod] if cod else -1, (r["data_ora"] or "")[:16].replace("T", " "), r["vettura"] or "",
                     r["esito"] or "in_corso", articoli.get(r["id"], []), r["cliente_nome"] or "",
-                    (r["esito_data"] or "")[:10]])
+                    (r["esito_data"] or "")[:10], conferme.get(r["id"])])
     return out
 
 

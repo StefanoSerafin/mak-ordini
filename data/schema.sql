@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS preventivi (
     diametri       TEXT,                   -- diametri delle ruote proposte, es. "16,17"
     listino        TEXT,
     tpms           TEXT,                   -- JSON del TPMS scelto, o vuoto
-    esito          TEXT,                   -- riuscito | riuscito_altra_ruota | non_riuscito | in_corso | da_abbinare
+    esito          TEXT,                   -- riuscito | riuscito_altra_ruota | confermato | non_riuscito | in_corso | da_abbinare
     esito_ordine   TEXT,                   -- id dell'ordine che ha dato l'esito
     esito_data     TEXT,
     importato      TEXT                    -- quando è stato caricato/aggiornato
@@ -102,8 +102,24 @@ CREATE TABLE IF NOT EXISTS preventivi_articoli (
     diametro         TEXT,
     netto            REAL,
     listino_pubblico REAL,
-    accessori        REAL
+    accessori        REAL,
+    numero           INTEGER               -- numero della scheda nei PDF (dal 2026-11-15; coppia = stesso numero)
 );
+
+-- Conferme d'ordine del rivenditore dalla pagina /conferma della webapp (dal 2026-11-15): una per invio, dall'archivio
+-- conferme/AAAA/MM/<id>-<hhmmss>.json. «Preparata» = il rivenditore ha premuto «Invia a Stefano» (WhatsApp).
+CREATE TABLE IF NOT EXISTS preventivi_conferme (
+    id             TEXT PRIMARY KEY,       -- nome del file senza .json
+    preventivo_id  TEXT NOT NULL,
+    data_ora       TEXT,
+    numero         INTEGER,                -- articolo scelto
+    articolo       TEXT,                   -- prima riga dell'ordine, leggibile
+    righe_json     TEXT,
+    totale         REAL,
+    nota           TEXT,
+    importato      TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_prev_conf ON preventivi_conferme(preventivo_id);
 
 CREATE INDEX IF NOT EXISTS ix_prev_cliente  ON preventivi(cliente_codice);
 CREATE INDEX IF NOT EXISTS ix_prev_art      ON preventivi_articoli(preventivo_id);

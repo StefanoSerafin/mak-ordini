@@ -14,6 +14,7 @@ chiunque li abbia inseriti:
   riuscito              una riga con lo stesso codice articolo di una ruota proposta
   riuscito_altra_ruota  nessuna, ma una ruota (lega o acciaio) dello stesso diametro di una proposta
   non_riuscito          nessuno dei due e sono passati 30 giorni
+  confermato            nessuno dei due, ma il rivenditore ha confermato l'ordine dalla pagina /conferma (dal 2026-11-15)
   in_corso              negli altri casi
   da_abbinare           preventivo senza codice cliente
 Questo repo è pubblico: qui solo codice, nessun dato di clienti. Funziona con il Python 3.9 di sistema.
@@ -42,6 +43,9 @@ def apri(percorso=DB):
     con.row_factory = sqlite3.Row
     with open(os.path.join(QUI, "schema.sql"), encoding="utf-8") as f:
         con.executescript(f.read())
+    # database creati prima del 2026-11-15: colonna del numero della scheda
+    if "numero" not in {r[1] for r in con.execute("PRAGMA table_info(preventivi_articoli)")}:
+        con.execute("ALTER TABLE preventivi_articoli ADD COLUMN numero INTEGER")
     return con
 
 
@@ -229,11 +233,46 @@ def carica(con, preventivi, clienti=None, abbinamenti=None):
                          pid, pid, pid, adesso))
             con.execute("DELETE FROM preventivi_articoli WHERE preventivo_id=?", (pid,))
             for n, a in enumerate(articoli, 1):
-                con.execute("""INSERT INTO preventivi_articoli VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                con.execute("""INSERT INTO preventivi_articoli (preventivo_id, n, codice_articolo, code, tipo, modello,
+                                   finitura, misure, diametro, netto, listino_pubblico, accessori, numero)
+                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                             (pid, n, a.get("codiceArticolo") or a.get("code"), a.get("code"), a.get("tipo"),
                              a.get("modello"), a.get("finitura"), a.get("misure"), str(a.get("diametro") or ""),
-                             a.get("netto"), a.get("listinoPubblico"), a.get("accessori")))
+                             a.get("netto"), a.get("listinoPubblico"), a.get("accessori"), a.get("numero")))
     return nuovi, aggiornati, da_abbinare
+
+
+def leggi_conferme(cartella=None):
+    """Conferme d'ordine dell'archivio: [(id del file, dati)]."""
+    cartella = cartella or os.path.join(ARCHIVIO, "conferme")
+    out = []
+    for radice, _, files in os.walk(cartella):
+        for nome in sorted(files):
+            if nome.endswith(".json"):
+                try:
+                    with open(os.path.join(radice, nome), encoding="utf-8") as f:
+                        out.append((nome[:-5], json.load(f)))
+                except (OSError, ValueError) as e:
+                    print(f"file saltato {nome}: {e}")
+    return out
+
+
+def carica_conferme(con, conferme):
+    """L'archivio è la fonte: la tabella si riscrive tutta (sono poche righe). Ritorna quante."""
+    adesso = dt.datetime.now().isoformat(timespec="seconds")
+    with con:
+        con.execute("DELETE FROM preventivi_conferme")
+        for cid, c in conferme:
+            righe = c.get("righe") or []
+            prima = next((r for r in righe if r.get("codice")), righe[0] if righe else {})
+            articolo = f"{prima.get('qta', '')} × {prima.get('codice', '')} {prima.get('descrizione', '')}".strip() \
+                if prima else ""
+            con.execute("""INSERT OR REPLACE INTO preventivi_conferme
+                           (id, preventivo_id, data_ora, numero, articolo, righe_json, totale, nota, importato)
+                           VALUES (?,?,?,?,?,?,?,?,?)""",
+                        (cid, c.get("id_preventivo") or "", c.get("data_ora") or "", c.get("numero"), articolo,
+                         json.dumps(righe, ensure_ascii=False), c.get("totale"), c.get("nota") or "", adesso))
+    return len(conferme)
 
 
 def togli_mancanti(con, preventivi):
@@ -258,7 +297,9 @@ def importa(con, git=True):
         return
     nuovi, aggiornati, da_abbinare = carica(con, archivio)
     tolti = togli_mancanti(con, archivio)
-    print(f"preventivi: {nuovi} nuovi, {aggiornati} aggiornati, {tolti} tolti, {da_abbinare} da abbinare")
+    conferme = carica_conferme(con, leggi_conferme())
+    print(f"preventivi: {nuovi} nuovi, {aggiornati} aggiornati, {tolti} tolti, {da_abbinare} da abbinare; "
+          f"{conferme} conferme d'ordine")
 
 
 # ---------- esiti ----------
@@ -272,6 +313,7 @@ def diametro_descrizione(descrizione):
 def calcola_esiti(con, oggi=None):
     oggi = oggi or dt.date.today()
     conta = {}
+    confermati = {r[0] for r in con.execute("SELECT DISTINCT preventivo_id FROM preventivi_conferme")}
     with con:
         for p in con.execute("SELECT id, data_ora, cliente_codice, diametri FROM preventivi").fetchall():
             esito, ordine, quando = "da_abbinare", None, None
@@ -299,6 +341,10 @@ def calcola_esiti(con, oggi=None):
                     esito = "non_riuscito"
                 else:
                     esito = "in_corso"
+            if p["id"] in confermati and esito not in ("riuscito", "riuscito_altra_ruota"):
+                # il rivenditore ha confermato dalla pagina /conferma ma l'ordine non è ancora arrivato:
+                # appena arriva, vince l'ordine
+                esito = "confermato"
             con.execute("UPDATE preventivi SET esito=?, esito_ordine=?, esito_data=? WHERE id=?",
                         (esito, ordine, quando, p["id"]))
             conta[esito] = conta.get(esito, 0) + 1
@@ -315,11 +361,12 @@ def riepilogo(con):
     mesi = {}
     for r in righe:
         mesi.setdefault(r["mese"], {})[r["esito"]] = r["n"]
-    print(f"{'mese':8} {'tot':>4} {'riusc':>6} {'altra':>6} {'non':>5} {'corso':>6} {'abbin':>6} {'tasso':>6}")
+    print(f"{'mese':8} {'tot':>4} {'riusc':>6} {'altra':>6} {'conf':>5} {'non':>5} {'corso':>6} {'abbin':>6} {'tasso':>6}")
     for mese, e in mesi.items():
         chiusi = e.get("riuscito", 0) + e.get("riuscito_altra_ruota", 0) + e.get("non_riuscito", 0)
         tasso = f"{100 * (e.get('riuscito', 0) + e.get('riuscito_altra_ruota', 0)) / chiusi:.0f}%" if chiusi else "-"
         print(f"{mese:8} {sum(e.values()):>4} {e.get('riuscito', 0):>6} {e.get('riuscito_altra_ruota', 0):>6} "
+              f"{e.get('confermato', 0):>5} "
               f"{e.get('non_riuscito', 0):>5} {e.get('in_corso', 0):>6} {e.get('da_abbinare', 0):>6} {tasso:>6}")
 
 

@@ -117,3 +117,43 @@ class TestPreventivi(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestConferme(unittest.TestCase):
+    """Conferme d'ordine del rivenditore (dal 2026-11-15)."""
+    def setUp(self):
+        self.con = P.apri(":memory:")
+        with self.con:
+            self.con.execute("INSERT INTO clienti (codice, ragione_sociale) VALUES ('000111', 'X')")
+        P.carica(self.con, [preventivo("20261101-100000-aaaa", "2026-11-01T10:00:00")], clienti=CLIENTI, abbinamenti={})
+        self.conferma = ("20261101-100000-aaaa-101500", {
+            "id_preventivo": "20261101-100000-aaaa", "data_ora": "2026-11-01T10:15:00", "numero": 1,
+            "righe": [{"qta": 4, "codice": "F6560AAAA32XX", "descrizione": "PROVA", "prezzo": 100.0},
+                      {"qta": 1, "codice": "", "descrizione": "Kit montaggio vettura", "prezzo": 18.0}],
+            "totale": 418.0, "nota": "entro venerdì"})
+
+    def test_confermato_finche_non_arriva_l_ordine(self):
+        P.carica_conferme(self.con, [self.conferma])
+        P.calcola_esiti(self.con, oggi=dt.date(2026, 11, 3))
+        r = self.con.execute("SELECT esito FROM preventivi").fetchone()
+        self.assertEqual(r[0], "confermato")
+        a = self.con.execute("SELECT articolo, totale FROM preventivi_conferme").fetchone()
+        self.assertEqual(tuple(a), ("4 × F6560AAAA32XX PROVA", 418.0))
+        with self.con:
+            self.con.execute("INSERT INTO ordini (id, codice_cliente, data_ora) VALUES ('O1', '000111', '2026-11-04 09:00:00')")
+            self.con.execute("INSERT INTO righe (ordine_id, cod_articolo, descrizione, categoria) "
+                             "VALUES ('O1', 'F6560AAAA32XX', '6,5J16 PROVA', 'Ruote lega')")
+        P.calcola_esiti(self.con, oggi=dt.date(2026, 11, 5))
+        self.assertEqual(self.con.execute("SELECT esito FROM preventivi").fetchone()[0], "riuscito")
+
+    def test_conferme_riscritte_dall_archivio(self):
+        P.carica_conferme(self.con, [self.conferma])
+        P.carica_conferme(self.con, [])
+        self.assertEqual(self.con.execute("SELECT count(*) FROM preventivi_conferme").fetchone()[0], 0)
+
+    def test_numero_della_scheda(self):
+        art = [{"numero": 2, "codiceArticolo": "X1", "code": "X1", "tipo": "lega", "diametro": "16", "netto": 1.0}]
+        P.carica(self.con, [preventivo("20261102-100000-bbbb", "2026-11-02T10:00:00", articoli=art)],
+                 clienti=CLIENTI, abbinamenti={})
+        n = self.con.execute("SELECT numero FROM preventivi_articoli WHERE preventivo_id='20261102-100000-bbbb'").fetchone()
+        self.assertEqual(n[0], 2)
