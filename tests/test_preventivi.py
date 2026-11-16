@@ -157,3 +157,46 @@ class TestConferme(unittest.TestCase):
                  clienti=CLIENTI, abbinamenti={})
         n = self.con.execute("SELECT numero FROM preventivi_articoli WHERE preventivo_id='20261102-100000-bbbb'").fetchone()
         self.assertEqual(n[0], 2)
+
+
+class TestStoreLocator(unittest.TestCase):
+    """Preventivi nati dalle richieste dello store locator (dal 2026-11-17): origine e pratica nel database e
+    conteggio delle richieste dell'archivio. Dati inventati."""
+
+    def test_origine_e_pratica_nel_database(self):
+        con = P.apri(":memory:")
+        p = dict(preventivo("20261117-101500-ab12", "2026-11-17T10:15:00"), origine="store-locator",
+                 pratica="261117-ABCD")
+        P.carica(con, [p, preventivo("20261117-110000-cd34", "2026-11-17T11:00:00")], clienti=CLIENTI, abbinamenti={})
+        righe = {r["id"]: (r["origine"], r["pratica"]) for r in con.execute("SELECT id, origine, pratica FROM preventivi")}
+        self.assertEqual(righe["20261117-101500-ab12"], ("store-locator", "261117-ABCD"))
+        self.assertEqual(righe["20261117-110000-cd34"], ("", ""))
+
+    def test_database_vecchio_riceve_le_colonne(self):
+        import sqlite3
+        import tempfile
+        percorso = os.path.join(tempfile.mkdtemp(), "vecchio.db")
+        con = P.apri(percorso)               # database com'era prima del 2026-11-17: senza le due colonne
+        con.execute("ALTER TABLE preventivi DROP COLUMN origine")
+        con.execute("ALTER TABLE preventivi DROP COLUMN pratica")
+        con.commit()
+        con.close()
+        con = sqlite3.connect(percorso)
+        self.assertNotIn("origine", {r[1] for r in con.execute("PRAGMA table_info(preventivi)")})
+        con.close()
+        colonne = {r[1] for r in P.apri(percorso).execute("PRAGMA table_info(preventivi)")}
+        self.assertTrue({"origine", "pratica"} <= colonne)
+
+    def test_conteggio_richieste_senza_dati_personali(self):
+        import json
+        import tempfile
+        cartella = tempfile.mkdtemp()
+        os.makedirs(os.path.join(cartella, "2026", "11"))
+        for pratica, giorno, stato in (("261117-AAAA", "2026-11-17", "fatta"), ("261118-BBBB", "2026-11-18", "da fare"),
+                                       ("261030-CCCC", "2026-10-30", "fatta")):
+            with open(os.path.join(cartella, "2026", "11", pratica + ".json"), "w", encoding="utf-8") as f:
+                json.dump({"pratica": pratica, "data_mail": giorno + " 10:00", "stato": stato,
+                           "cliente_finale": "Mario Rossi", "cliente": {"codice": "000111"}}, f)
+        r = P.richieste_store_locator(cartella, "2026-11-16", "2026-11-22")
+        self.assertEqual(sorted(x["pratica"] for x in r), ["261117-AAAA", "261118-BBBB"])
+        self.assertNotIn("cliente_finale", r[0])

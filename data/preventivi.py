@@ -17,6 +17,8 @@ chiunque li abbia inseriti:
   confermato            nessuno dei due, ma il rivenditore ha confermato l'ordine dalla pagina /conferma (dal 2026-11-15)
   in_corso              negli altri casi
   da_abbinare           preventivo senza codice cliente
+Dal 2026-11-17 i preventivi nati dalle richieste dello store locator hanno origine «store-locator» e il numero pratica;
+richieste_store_locator() conta le richieste dell'archivio (richieste/) per il briefing, senza dati del consumatore.
 Questo repo è pubblico: qui solo codice, nessun dato di clienti. Funziona con il Python 3.9 di sistema.
 """
 import datetime as dt
@@ -46,6 +48,11 @@ def apri(percorso=DB):
     # database creati prima del 2026-11-15: colonna del numero della scheda
     if "numero" not in {r[1] for r in con.execute("PRAGMA table_info(preventivi_articoli)")}:
         con.execute("ALTER TABLE preventivi_articoli ADD COLUMN numero INTEGER")
+    # database creati prima del 2026-11-17: preventivi nati dalle richieste dello store locator
+    colonne = {r[1] for r in con.execute("PRAGMA table_info(preventivi)")}
+    for col in ("origine", "pratica"):
+        if col not in colonne:
+            con.execute(f"ALTER TABLE preventivi ADD COLUMN {col} TEXT")
     return con
 
 
@@ -222,15 +229,15 @@ def carica(con, preventivi, clienti=None, abbinamenti=None):
             aggiornati += bool(esiste)
             con.execute("""INSERT OR REPLACE INTO preventivi
                 (id, data_ora, cliente_codice, cliente_nome, abbinato, vettura, vettura_json, diametri, listino, tpms,
-                 esito, esito_ordine, esito_data, importato)
+                 esito, esito_ordine, esito_data, importato, origine, pratica)
                 VALUES (?,?,?,?,?,?,?,?,?,?,
                         (SELECT esito FROM preventivi WHERE id=?), (SELECT esito_ordine FROM preventivi WHERE id=?),
-                        (SELECT esito_data FROM preventivi WHERE id=?), ?)""",
+                        (SELECT esito_data FROM preventivi WHERE id=?), ?, ?, ?)""",
                         (pid, p.get("data_ora"), codice, p.get("cliente_nome") or "", come,
                          v.get("testo") or " ".join(x for x in (v.get("marca"), v.get("modello")) if x),
                          json.dumps(v, ensure_ascii=False), ",".join(diametri), p.get("listino") or "",
                          json.dumps(p["tpms"], ensure_ascii=False) if p.get("tpms") else "",
-                         pid, pid, pid, adesso))
+                         pid, pid, pid, adesso, p.get("origine") or "", p.get("pratica") or ""))
             con.execute("DELETE FROM preventivi_articoli WHERE preventivo_id=?", (pid,))
             for n, a in enumerate(articoli, 1):
                 con.execute("""INSERT INTO preventivi_articoli (preventivo_id, n, codice_articolo, code, tipo, modello,
@@ -368,6 +375,37 @@ def riepilogo(con):
         print(f"{mese:8} {sum(e.values()):>4} {e.get('riuscito', 0):>6} {e.get('riuscito_altra_ruota', 0):>6} "
               f"{e.get('confermato', 0):>5} "
               f"{e.get('non_riuscito', 0):>5} {e.get('in_corso', 0):>6} {e.get('da_abbinare', 0):>6} {tasso:>6}")
+    sl = con.execute("""SELECT substr(data_ora,1,7) mese, esito, count(*) n FROM preventivi
+                        WHERE origine = 'store-locator' GROUP BY mese, esito ORDER BY mese""").fetchall()
+    if sl:
+        print("\ndi cui dalle richieste dello store locator:")
+        mesi = {}
+        for r in sl:
+            mesi.setdefault(r["mese"], {})[r["esito"]] = r["n"]
+        for mese, e in mesi.items():
+            print(f"{mese:8} {sum(e.values()):>4} " + ", ".join(f"{k} {v}" for k, v in sorted(e.items(), key=lambda x: str(x[0]))))
+
+
+def richieste_store_locator(cartella=None, dal="", al="9999"):
+    """Richieste dello store locator nell'archivio (create dal Mac, stato scritto dalla webapp), con data_mail tra
+    dal e al (AAAA-MM-GG). Solo i campi che servono ai conteggi: niente nomi né recapiti del consumatore."""
+    cartella = cartella or os.path.join(ARCHIVIO, "richieste")
+    out = []
+    for radice, _, files in os.walk(cartella):
+        for nome in sorted(files):
+            if not nome.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(radice, nome), encoding="utf-8") as f:
+                    r = json.load(f)
+            except (OSError, ValueError):
+                continue
+            giorno = (r.get("data_mail") or "")[:10]
+            if dal <= giorno <= al:
+                out.append({"pratica": r.get("pratica", ""), "data": giorno, "stato": r.get("stato") or "da fare",
+                            "preventivo_id": r.get("preventivo_id") or "",
+                            "cliente_codice": (r.get("cliente") or {}).get("codice", "")})
+    return out
 
 
 def main(argv):

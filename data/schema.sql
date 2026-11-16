@@ -87,7 +87,9 @@ CREATE TABLE IF NOT EXISTS preventivi (
     esito          TEXT,                   -- riuscito | riuscito_altra_ruota | confermato | non_riuscito | in_corso | da_abbinare
     esito_ordine   TEXT,                   -- id dell'ordine che ha dato l'esito
     esito_data     TEXT,
-    importato      TEXT                    -- quando è stato caricato/aggiornato
+    importato      TEXT,                   -- quando è stato caricato/aggiornato
+    origine        TEXT,                   -- 'store-locator' se nato da una richiesta del sito MAK (dal 2026-11-17)
+    pratica        TEXT                    -- numero pratica della richiesta dello store locator
 );
 
 CREATE TABLE IF NOT EXISTS preventivi_articoli (
